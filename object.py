@@ -163,3 +163,5 @@ def revise(obj: Namespace, src: dict, revised=set()):
         revised.clear()
 
 ########################################################################
+
+Namespace.__name__ = `<>`
