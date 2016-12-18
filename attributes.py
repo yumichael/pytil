@@ -1,5 +1,3 @@
-from pytil.utility import *
-
 ########################################################################
 #                         ATTRIBUTE ACCESSING                          #
 ########################################################################
@@ -19,7 +17,7 @@ class Attribute(str):
             return inst
 
     def __repr__(self):
-        return "<.{}>".format(self)
+        return "{{.{}}}".format(self)
 
     def __call__(self, obj=None, set=_flag, dlt=_flag):
         if dlt is not _flag:
