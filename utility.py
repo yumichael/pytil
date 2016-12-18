@@ -4,10 +4,6 @@ from itertools import chain
 from importlib import reload
 from functools import wraps
 
-from pytil.object import Namespace
-from pytil.attributes import attribute_accessor
-
-
 print_ = print
 
 #TODO change self.__class__ to type(self) and other magic accesses
@@ -140,4 +136,4 @@ def _quick_call(obj, name):
     obj.__name__ = name
     return obj
 #DO = _quick_call(DictObject, 'DO')
-_quick_call(Namespace, '<>')
+#_quick_call(Namespace, '<>')
