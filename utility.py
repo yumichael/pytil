@@ -130,10 +130,3 @@ def scaler(left=None, right=None):
 def power(exponent):
     return lambda x: x ** exponent
 
-
-# Make names less annoying
-def _quick_call(obj, name):
-    obj.__name__ = name
-    return obj
-#DO = _quick_call(DictObject, 'DO')
-#_quick_call(Namespace, '<>')
