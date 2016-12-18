@@ -140,4 +140,4 @@ def _quick_call(obj, name):
     obj.__name__ = name
     return obj
 #DO = _quick_call(DictObject, 'DO')
-Ob = _quick_call(Namespace, '<>')
+_quick_call(Namespace, '<>')
