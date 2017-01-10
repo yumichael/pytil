@@ -3,7 +3,7 @@
 Typical boilerplate code I would add to projects is
 ```python
 from pytil.utility import *
-from pytil.object import Namespace as Ob               # optional include
+from pytil.object import Namespace as O                # optional include
 from pytil.attributes import attribute_accessor as AA  # optional include
 ```
 
@@ -12,7 +12,7 @@ Importing this using `import *` imports some things hidden away in Python's stan
 and adds some of my own common metaclasses, functional programming helpers, and various other things.
 
 #### pytil.object
-This module contains the `Namespace` class, which has the internal name `<>` and goes by the idiomatic referencee `Ob`.
+This module contains the `Namespace` class, which has the internal name `<>` and goes by the idiomatic referencee `O`.
 `Namespace` is a subclass of `dict` that routes all attributes to dictionary lookup.
 So it is like a Javascript object, except its methods cannot be accessed by conventional `obj.method` notation
 as that would instead mean `obj['method']`. It has most of the expected magic methods implemented,
@@ -26,8 +26,8 @@ by the way of `AA.some_name is Attribute('some_name')` being true.
 
 Here are examples.
 ```python
->>> from pytil.object import Namespace as Ob
->>> thing = Ob(hello=35)
+>>> from pytil.object import Namespace as O
+>>> thing = O(hello=35)
 >>> thing
 <>(hello=35)
 >>> thing.what = 72
@@ -36,8 +36,8 @@ Here are examples.
 >>> from pytil.attributes import attribute_accessor as AA
 >>> AA.what(thing)
 72
->>> # you can also create an Ob using class definition syntax
->>> class another_thing(Ob()):
+>>> # you can also create an O using class definition syntax
+>>> class another_thing(O()):
 ...     hello = 88
 ...
 >>> another_thing
