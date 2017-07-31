@@ -4,7 +4,6 @@ from itertools import chain
 from importlib import reload
 from functools import wraps
 
-print_ = print
 
 #TODO change self.__class__ to type(self) and other magic accesses
 # like self.__magicattr__ to super(object, self).__magicattr__ so that
@@ -99,6 +98,10 @@ def merged_dict(*dicts):
 
 def dictmap(function, mapping):
     return {key: function(val) for key, val in type(mapping).items(mapping)}
+
+
+def frozen_mapping(mapping):
+    return tuple(sorted(mapping.items()))
 
 
 # math/functional
