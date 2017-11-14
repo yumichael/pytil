@@ -37,7 +37,7 @@ Here are examples.
 >>> AA.what(thing)
 72
 >>> # you can also create an O using class definition syntax
->>> class another_thing(O()):
+>>> class another_thing(metaclass=O):
 ...     hello = 88
 ...
 >>> another_thing
