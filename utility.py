@@ -2,7 +2,7 @@ import collections as _collections
 
 from itertools import chain
 from importlib import reload
-from functools import wraps
+from functools import wraps, reduce
 
 
 #TODO change self.__class__ to type(self) and other magic accesses
@@ -10,6 +10,11 @@ from functools import wraps
 # if self overrides __getattribute__ these are not broken.
 # Hell maybe even do super(type, type(self)).__magicmethod__(self) to
 # defend against custom behaviour defined in type(self)
+
+
+def binom(n,k):
+    k = min(k, n - k)
+    return reduce(lambda a, b: a * (n - b) // (b + 1), range(k), 1)
 
 
 class Singleton(type):
