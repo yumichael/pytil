@@ -12,11 +12,6 @@ from functools import wraps, reduce
 # defend against custom behaviour defined in type(self)
 
 
-def binom(n,k):
-    k = min(k, n - k)
-    return reduce(lambda a, b: a * (n - b) // (b + 1), range(k), 1)
-
-
 class Singleton(type):
     _instances = {}
     def __call__(cls, *args, **kwargs):
@@ -118,6 +113,10 @@ def prod(iterable, start=1):
     for x in iterable:
         product *= x
     return product
+
+def binom(n,k):
+    k = min(k, n - k)
+    return reduce(lambda a, b: a * (n - b) // (b + 1), range(k), 1)
 
 def adder(left=None, right=None):
     if left is not None:
