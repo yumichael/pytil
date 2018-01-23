@@ -2,7 +2,7 @@ import collections as _collections
 
 from itertools import chain
 from importlib import reload
-from functools import wraps
+from functools import wraps, reduce
 
 
 #TODO change self.__class__ to type(self) and other magic accesses
@@ -132,6 +132,10 @@ def prod(iterable, start=1):
     for x in iterable:
         product *= x
     return product
+
+def binom(n,k):
+    k = min(k, n - k)
+    return reduce(lambda a, b: a * (n - b) // (b + 1), range(k), 1)
 
 def adder(left=None, right=None):
     if left is not None:
