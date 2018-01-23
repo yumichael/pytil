@@ -88,15 +88,6 @@ def memo(function):
     return memoized_function
 
 
-from contextlib import contextmanager
-@contextmanager
-def ignored(*exceptions):
-    try:
-        yield
-    except exceptions:
-        pass
-
-
 def multiline_code(codestr):
     rc = _re.compile(r'\n\s*')
     indent = rc.match(codestr).group()
