@@ -68,6 +68,25 @@ def memoized(function):
     memoized.cache = cache
     return memoized
 
+def memo(function):
+    cache = {}
+    @wraps(function)
+    def memoized_function(*args, **kwargs):
+        if kwargs:
+            raise TypeError("memoized function cannot take keyword arguments")
+        try:
+            if args in cache:
+                return cache[args]
+            else:
+                result = function(*args)
+                cache[args] = result
+                return result
+        except TypeError:
+            raise TypeError("memoized function cannot take unhashable arguments")
+        return function(*args)
+    memoized_function.cache = cache
+    return memoized_function
+
 
 def multiline_code(codestr):
     rc = _re.compile(r'\n\s*')

@@ -7,6 +7,7 @@ try:
 except ImportError:
     _TPO = type("_TPO", (), {})
 from pytil.utility import *
+from pytil.object import Namespace as O
 
 
 def canvas(width, height):
