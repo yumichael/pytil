@@ -36,7 +36,7 @@ def itemsetter(*items):
     return g
 
 
-class Break(BaseException):
+class Stop(BaseException):
     pass
 
 
