@@ -63,7 +63,7 @@ def memoized(function):
     '''
     cache = Cache(function)
     @wraps(function)
-    def memoized(*args, **kwargs):
+    def memoized(*args):
         return cache[args]
     memoized.cache = cache
     return memoized
@@ -72,18 +72,17 @@ def memo(function):
     cache = {}
     @wraps(function)
     def memoized_function(*args, **kwargs):
-        if kwargs:
-            raise TypeError("memoized function cannot take keyword arguments")
         try:
-            if args in cache:
-                return cache[args]
+            entry = (args, tuple(sorted(kwargs.items())))
+            if entry in cache:
+                return cache[entry]
             else:
-                result = function(*args)
-                cache[args] = result
+                result = function(*args, **kwargs)
+                cache[entry] = result
                 return result
         except TypeError:
             raise TypeError("memoized function cannot take unhashable arguments")
-        return function(*args)
+        return function(*args, **kwargs)
     memoized_function.cache = cache
     return memoized_function
 
