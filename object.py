@@ -145,6 +145,8 @@ class Namespace(DictObject):
         if is_orig:
             copied.clear()
         return selfc
+    
+    py = lambda o: {str(k): v for k, v in dict.items(o)}
 
 def copy(obj):
     assert(isinstance(obj, Namespace))
