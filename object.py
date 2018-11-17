@@ -145,6 +145,22 @@ class Namespace(DictObject):
         if is_orig:
             copied.clear()
         return selfc
+
+    def pycopy(self, copied={}):
+        is_orig = not copied
+        selfc = copied[id(self)] = {}
+        for key, obj in type(self).items(self):
+            key = str(key)
+            if isinstance(obj, __class__):
+                if id(obj) in copied:
+                    selfc[key] = copied[id(obj)]
+                else:
+                    selfc[key] = type(obj).pycopy(obj, copied=copied)
+            else:
+                selfc[key] = obj
+        if is_orig:
+            copied.clear()
+        return selfc
     
     py = lambda o: {str(k): v for k, v in dict.items(o)}
 
