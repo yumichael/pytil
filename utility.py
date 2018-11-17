@@ -21,7 +21,17 @@ class Singleton(type):
 
 
 def closure(f):
+    '''decorator that immediately calles the decorated callable with no arguments'''
     return f()
+
+def inside(cls, name=None):
+    '''decorator with one argument that sets the decorated as an attribute of the argument. also optional argument `name` exists.'''
+    def put_inside(a):
+        nonlocal name
+        name = name if name is not None else a.__name__
+        setattr(cls, name, a)
+        return a
+    return put_inside
 
 
 def itemsetter(*items):
@@ -37,6 +47,7 @@ def itemsetter(*items):
 
 
 class Stop(BaseException):
+    '''special exception to indicate STOP when doing interactive work in notebook'''
     pass
 
 
