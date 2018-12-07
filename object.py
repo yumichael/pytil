@@ -183,3 +183,27 @@ def revise(obj: Namespace, src: dict, revised=set()):
 ########################################################################
 
 Namespace.__name__ = '<>'
+
+class NamedNamespace(Namespace):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if len(args) == 3:
+            self.__name__ = args[0]
+    def __repr__(self):
+        attach = __class__.__repr__
+        is_orig = False
+        if not hasattr(attach, '_seen'):
+            is_orig = True
+            attach._seen = {}
+        elif id(self) in attach._seen:
+            return f"<{self.__name__}>(...)"
+        attach._seen[id(self)] = self
+        try:
+            it = type(self).items(self)
+            body = ', '.join("{}={}".format(a, repr(v)) for a, v in it if a != '__name__')
+            return f"<{self.__name__}>({body})"
+        finally:
+            del attach._seen[id(self)]
+            if is_orig:
+                del attach._seen
+NamedNamespace.__name__ = '<>'
