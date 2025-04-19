@@ -127,4 +127,11 @@ def create_array_heap_1d_items_jitclass(data_type):
         def __str__(self):
             return '[' + ', '.join([stringify_1d_array(item) for item in self.heap[: self.size]]) + ']'
 
+        insert = heappush
+
+        def pop(self, index=0):
+            if index == 0:
+                return self.heappop()
+            raise IndexError("Only index 0 is supported for pop")
+
     return ArrayHeap1
