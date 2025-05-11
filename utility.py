@@ -1,19 +1,20 @@
 import collections as _collections
-
-from itertools import chain
+from functools import reduce, wraps
 from importlib import reload
-from functools import wraps, reduce
+from itertools import chain
 
-
-#TODO change self.__class__ to type(self) and other magic accesses
+# TODO change self.__class__ to type(self) and other magic accesses
 # like self.__magicattr__ to super(object, self).__magicattr__ so that
 # if self overrides __getattribute__ these are not broken.
 # Hell maybe even do super(type, type(self)).__magicmethod__(self) to
 # defend against custom behaviour defined in type(self)
 
+null = lambda *args, **kwargs: None
+
 
 class Singleton(type):
     _instances = {}
+
     def __call__(cls, *args, **kwargs):
         if cls not in cls._instances:
             cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
@@ -24,30 +25,38 @@ def closure(f):
     '''decorator that immediately calles the decorated callable with no arguments'''
     return f()
 
+
 def inside(cls, name=None):
     '''decorator with one argument that sets the decorated as an attribute of the argument. also optional argument `name` exists.'''
+
     def put_inside(a):
         nonlocal name
         name = name if name is not None else a.__name__
         setattr(cls, name, a)
         return a
+
     return put_inside
 
 
 def itemsetter(*items):
     if len(items) == 1:
         item = items[0]
+
         def g(obj, value):
             obj[item] = value
+
     else:
+
         def g(obj, values):
             for item, value in zip(items, values):
                 obj[item] = value
+
     return g
 
 
 class Stop(BaseException):
     '''special exception to indicate STOP when doing interactive work in notebook'''
+
     pass
 
 
@@ -56,7 +65,7 @@ class Cache(dict):
 
     def __init__(self, function):
         self.function = function
-    
+
     def __getitem__(self, args):
         if not isinstance(args, tuple):
             args = (args,)
@@ -73,14 +82,18 @@ def memoized(function):
     DOES NOT SUPPORT kwargs for function! Will ignore all kwargs.
     '''
     cache = Cache(function)
+
     @wraps(function)
     def memoized(*args):
         return cache[args]
+
     memoized.cache = cache
     return memoized
 
+
 def memo(function):
     cache = {}
+
     @wraps(function)
     def memoized_function(*args, **kwargs):
         try:
@@ -94,6 +107,7 @@ def memo(function):
         except TypeError:
             raise TypeError("memoized function cannot take unhashable arguments")
         return function(*args, **kwargs)
+
     memoized_function.cache = cache
     return memoized_function
 
@@ -103,16 +117,18 @@ def multiline_code(codestr):
     indent = rc.match(codestr).group()
     return codestr.replace(indent, '\n')
 
-    
+
 def compose(*args, l2r=True, r2l=False):
     funclist = list(args)
     if r2l:
         funclist.reverse()
+
     def composed_function(*args, **kwargs):
         res = funclist[0](*args, **kwargs)
         for f in funclist[1:]:
             res = f(res)
         return res
+
     return composed_function
 
 
@@ -137,15 +153,18 @@ def frozen_mapping(mapping):
 def identity(x):
     return x
 
-def prod(iterable, start=1):
-    product = start
-    for x in iterable:
-        product *= x
-    return product
 
-def binom(n,k):
+# def prod(iterable, start=1):
+#     product = start
+#     for x in iterable:
+#         product *= x
+#     return product
+
+
+def binom(n, k):
     k = min(k, n - k)
     return reduce(lambda a, b: a * (n - b) // (b + 1), range(k), 1)
+
 
 def adder(left=None, right=None):
     if left is not None:
@@ -155,6 +174,7 @@ def adder(left=None, right=None):
     else:
         raise TypeError("operation only takes one of left or right")
 
+
 def scaler(left=None, right=None):
     if left is not None:
         return lambda x: left * x
@@ -163,6 +183,6 @@ def scaler(left=None, right=None):
     else:
         raise TypeError("operation only takes one of left or right")
 
-def power(exponent):
-    return lambda x: x ** exponent
 
+def power(exponent):
+    return lambda x: x**exponent
