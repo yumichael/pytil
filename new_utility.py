@@ -14,6 +14,11 @@ def highest_power_of_2_dividing(n):
     return n & (~(n - 1))
 
 
+@njit(inline='always')
+def identity(x):
+    return x
+
+
 class Ticker:
     def __init__(self, value=0):
         self.count = value
