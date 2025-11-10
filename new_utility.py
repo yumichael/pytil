@@ -19,6 +19,15 @@ def identity(x):
     return x
 
 
+@njit(inline='always')
+def prod_njit(a):
+    assert len(a) >= 1
+    out = a[0]
+    for i in range(1, len(a)):
+        out *= a[i]
+    return out
+
+
 class Ticker:
     def __init__(self, value=0):
         self.count = value
