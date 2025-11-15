@@ -31,9 +31,6 @@ def create_array_treap_1d_items_jitclass(data_type):
     Factory function to create a treap class specialized for 1D items
     using only 'array_is_less' to define BST ordering (and equality detection).
     """
-    assert (
-        data_type is nb.int64 or data_type is nb.float64
-    ), 'Only 64-bit data types supported as the random key generation is defined up to 10**9'
 
     spec = [
         ('capacity', nb.int64),
