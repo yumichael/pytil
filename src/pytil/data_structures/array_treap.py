@@ -512,6 +512,7 @@ def create_array_treap_1d_items_jitclass(data_type):
     SUBTREE_SIZE = 4
     NODE_FIELDS = 5  # Total number of fields
 
+    # NOTE I tested with int32 bookkeeping data, it's not faster
     spec = [
         ('capacity', nb.int64),
         ('item_size', nb.int64),
