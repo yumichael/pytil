@@ -10,7 +10,7 @@ from numba.typed import List
 # Import your treap jitclass factory.
 from pytil.data_structures.array_treap import (
     create_array_treap_1d_items_jitclass,
-    create_array_treap_1d_items_jitclass_fast,
+    create_array_treap_1d_items_jitclass_slow,
 )
 
 
@@ -46,7 +46,7 @@ def random_val_float():
 @cache
 def create_treap_tests(
     data_type,
-    create_array_treap_1d_items_jitclass_function=create_array_treap_1d_items_jitclass_fast,
+    create_array_treap_1d_items_jitclass_function=create_array_treap_1d_items_jitclass,
 ):
     """
     Factory that creates two specialized Numba-jitted functions for testing
