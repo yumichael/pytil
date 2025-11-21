@@ -3,6 +3,8 @@ from numba import njit
 
 tau = np.pi * 2
 
+null_njit = njit(lambda *args: None)
+
 
 @njit(inline='always')
 def is_power_of_two(n):
