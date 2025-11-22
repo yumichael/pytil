@@ -59,6 +59,7 @@ def create_array_treap_1d_items_jitclass_slow(data_type):
             Initialize the treap with a maximum capacity and item size.
             Each row of 'data' is considered one item.
             """
+            # print(f'Creating ArrayTreap1 with capacity', capacity, 'and item_size', item_size)
             self.capacity = capacity
             self.item_size = item_size
             self.size = 0
@@ -526,11 +527,11 @@ def create_array_treap_1d_items_jitclass(data_type):
     ]
 
     @jitclass(spec)
-    class ArrayTreap1:
+    class ArrayTreap1Fast:
         """
         A treap (tree-based heap) implemented with implicit indexing,
         using 'array_is_less' to compare multi-dimensional items.
-        (AoS "fast" version)
+        (AoS (i.e. Array of Struct) "fast" version)
         """
 
         def __init__(self, capacity, item_size):
@@ -538,6 +539,7 @@ def create_array_treap_1d_items_jitclass(data_type):
             Initialize the treap with a maximum capacity and item size.
             Each row of 'data' is considered one item.
             """
+            # print(f'Creating ArrayTreap1Fast with capacity', capacity, 'and item_size', item_size)
             self.capacity = capacity
             self.item_size = item_size
             self.size = 0
@@ -980,4 +982,4 @@ def create_array_treap_1d_items_jitclass(data_type):
             elems = [stringify_1d_array(self.data[node]) for node in inord]
             return "[" + ", ".join(elems) + "]"
 
-    return ArrayTreap1
+    return ArrayTreap1Fast
