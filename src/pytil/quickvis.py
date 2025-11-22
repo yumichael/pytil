@@ -149,10 +149,10 @@ def draw(x, info=None, tile=2):
 draw.aspect = 4
 
 
-def view(image):
+def view(image, *, cmap=None):
     self = view
     plt.figure(figsize=view.figsize)
-    plt.imshow(image)
+    plt.imshow(image, cmap=cmap)
     plt.axis('off')
 
 
