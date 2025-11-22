@@ -1,24 +1,27 @@
-import numpy as np
 import math
+
 import matplotlib.pyplot as plt
+import numpy as np
 
 try:
     from theano.tensor.var import _tensor_py_operators as _TPO
 except ImportError:
     _TPO = type("_TPO", (), {})
-from pytil.utility import *
 from pytil.object import Namespace as O
+from pytil.utility import *
 
 
 def canvas(width, height):
     dpi = 96
     from pylab import rcParams
+
     rcParams['figure.figsize'] = width, height
 
 
 def draw(x, info=None, tile=2):
     self = draw
-    #plt.axis('off')
+
+    # plt.axis('off')
     class draw_flags(O()):
         cmap = plt.cm.binary
         aspect = 'equal'
@@ -28,7 +31,7 @@ def draw(x, info=None, tile=2):
         if hasattr(x, A.get_value):
             x = x.get_value()
         else:
-            x = x.eval()    
+            x = x.eval()
     sh = list(x.shape)
     while sh and sh[0] == 1:
         del sh[0]
@@ -51,7 +54,7 @@ def draw(x, info=None, tile=2):
     tile = sh[-2:]
 
     if info is not None:
-        assert(2 <= len(sh) <= 4)
+        assert 2 <= len(sh) <= 4
         datsh = sh[:-2]
         info = np.asarray(info).reshape(datsh)
         if len(datsh) == 2:
@@ -83,7 +86,7 @@ def draw(x, info=None, tile=2):
 
     for n, (d, s) in enumerate(zip(rcdims, rcsh)):
         d = [d.start, d.stop]
-        thick = 1 - (n == 0 and tile11) #n + 1 - tile11
+        thick = 1 - (n == 0 and tile11)  # n + 1 - tile11
         if thick > 0:
             xsh = list(x.shape)
             xsh[d[1]] = thick
@@ -93,6 +96,7 @@ def draw(x, info=None, tile=2):
             x = np.concatenate([x, np.ones(xsh)], axis=d[1] + 1)
         #
         xsh = list(x.shape)
+
         def SUBROUTINE(nhor, side=0):
             nonlocal x
             dside = d[0] + side
@@ -107,11 +111,12 @@ def draw(x, info=None, tile=2):
             xsh.insert(dside + 1, nhor)
             x = x.reshape(xsh)
             return nver
+
         if d[0] + 1 == d[1]:
             nhor = math.ceil(math.sqrt(s[0] * tile[0] / tile[1]))
             nver = SUBROUTINE(nhor)
             d[1] += 1
-        else: # d[0] + 2 == d[1]
+        else:  # d[0] + 2 == d[1]
             ratio0 = (s[0] * tile[0]) / (s[1] * tile[1])
             if ratio0 > self.aspect:
                 nhor = math.ceil(math.sqrt(ratio0))
@@ -139,4 +144,16 @@ def draw(x, info=None, tile=2):
         tile = xsh[-2:]
     plt.imshow(x, **draw_flags)
     plt.colorbar()
+
+
 draw.aspect = 4
+
+
+def view(image):
+    self = view
+    plt.figure(figsize=view.figsize)
+    plt.imshow(image)
+    plt.axis('off')
+
+
+view.figsize = (10, 10)
