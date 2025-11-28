@@ -9,8 +9,7 @@ from numba.typed import List
 
 # Import your treap jitclass factory.
 from pytil.data_structures.array_treap import (
-    create_array_treap_1d_items_jitclass,
-    create_array_treap_1d_items_jitclass_slow,
+    create_array_treap_1d_items_jitclass_fast as create_array_treap_1d_items_jitclass,
 )
 
 
@@ -44,10 +43,7 @@ def random_val_float():
 # Factory Function for Treap Tests (only public methods)
 # ---------------------------------------------------------------------
 @cache
-def create_treap_tests(
-    data_type,
-    create_array_treap_1d_items_jitclass_function=create_array_treap_1d_items_jitclass,
-):
+def create_treap_tests(data_type):
     """
     Factory that creates two specialized Numba-jitted functions for testing
     your treap implementation (from array_treap.py). Only public methods
@@ -58,7 +54,7 @@ def create_treap_tests(
        (correctness_test, benchmark_test)
     """
     # Create the specialized jitclass for the treap.
-    TreapClass = create_array_treap_1d_items_jitclass_function(data_type)
+    TreapClass = create_array_treap_1d_items_jitclass(data_type)
 
     # Choose the proper item generator, oracle element type, random value
     # generator, and initial total value—all done outside the njit functions.

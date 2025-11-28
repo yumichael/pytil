@@ -8,7 +8,9 @@ import numpy as np
 from numba.typed import List
 
 # Suppose your jitclass factory is in array_heap.py
-from pytil.data_structures.array_heap import create_array_heap_1d_items_jitclass
+from pytil.data_structures.array_heap import (
+    create_array_heap_1d_items_jitclass_indirect as create_array_heap_1d_items_jitclass,
+)
 
 
 @nb.njit

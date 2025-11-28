@@ -29,7 +29,7 @@ def stringify_1d_array(array):
 
 
 @cache
-def create_array_heap_1d_items_jitclass_slow(data_type):
+def create_array_heap_1d_items_jitclass_direct(data_type):
     '''
     Creates a Heap class that stores indices in the heap structure.
     Puts the user data directly in the array heap, requiring sift up/down to shuffle user data directly all the time.
@@ -43,9 +43,8 @@ def create_array_heap_1d_items_jitclass_slow(data_type):
     )
 
     @jitclass(spec)
-    class ArrayHeap1:
+    class ArrayHeap1Direct:
         def __init__(self, capacity, item_size):
-            # print(f'Creating ArrayHeap1 with capacity', capacity, 'and item_size', item_size)
             self.capacity = capacity
             self.item_size = item_size
             self.size = 0
@@ -140,11 +139,11 @@ def create_array_heap_1d_items_jitclass_slow(data_type):
                 return self.heappop()
             raise IndexError("Only index 0 is supported for pop")
 
-    return ArrayHeap1
+    return ArrayHeap1Direct
 
 
 @cache
-def create_array_heap_1d_items_jitclass(data_type):
+def create_array_heap_1d_items_jitclass_indirect(data_type):
     """
     Creates a Heap class that stores indices in the heap structure,
     referencing a separate data array.
@@ -160,9 +159,8 @@ def create_array_heap_1d_items_jitclass(data_type):
     ]
 
     @jitclass(spec)
-    class ArrayHeap1Fast:
+    class ArrayHeap1Indirect:
         def __init__(self, capacity, item_size):
-            # print(f'Creating ArrayHeap1Fast with capacity', capacity, 'and item_size', item_size)
             self.capacity = capacity
             self.item_size = item_size
             self.size = 0
@@ -303,4 +301,7 @@ def create_array_heap_1d_items_jitclass(data_type):
                 return self.heappop()
             raise IndexError("Only index 0 is supported for pop")
 
-    return ArrayHeap1Fast
+    return ArrayHeap1Indirect
+
+
+create_array_heap_1d_items_jitclass = create_array_heap_1d_items_jitclass_indirect

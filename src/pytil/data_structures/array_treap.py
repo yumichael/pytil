@@ -48,7 +48,7 @@ def create_array_treap_1d_items_jitclass_slow(data_type):
     ]
 
     @jitclass(spec)
-    class ArrayTreap1:
+    class ArrayTreap1Slow:
         """
         A treap (tree-based heap) implemented with implicit indexing,
         using 'array_is_less' to compare multi-dimensional items.
@@ -59,7 +59,6 @@ def create_array_treap_1d_items_jitclass_slow(data_type):
             Initialize the treap with a maximum capacity and item size.
             Each row of 'data' is considered one item.
             """
-            # print(f'Creating ArrayTreap1 with capacity', capacity, 'and item_size', item_size)
             self.capacity = capacity
             self.item_size = item_size
             self.size = 0
@@ -485,7 +484,7 @@ def create_array_treap_1d_items_jitclass_slow(data_type):
             elems = [stringify_1d_array(self.data[node]) for node in inord]
             return "[" + ", ".join(elems) + "]"
 
-    return ArrayTreap1
+    return ArrayTreap1Slow
 
 
 # ----------------------------------------------------------------------------
@@ -494,7 +493,7 @@ def create_array_treap_1d_items_jitclass_slow(data_type):
 
 
 @cache
-def create_array_treap_1d_items_jitclass(data_type):
+def create_array_treap_1d_items_jitclass_fast(data_type):
     """
     Factory function to create a treap class specialized for 1D items
     using only 'array_is_less' to define BST ordering (and equality detection).
@@ -539,7 +538,6 @@ def create_array_treap_1d_items_jitclass(data_type):
             Initialize the treap with a maximum capacity and item size.
             Each row of 'data' is considered one item.
             """
-            # print(f'Creating ArrayTreap1Fast with capacity', capacity, 'and item_size', item_size)
             self.capacity = capacity
             self.item_size = item_size
             self.size = 0
@@ -983,3 +981,6 @@ def create_array_treap_1d_items_jitclass(data_type):
             return "[" + ", ".join(elems) + "]"
 
     return ArrayTreap1Fast
+
+
+create_array_treap_1d_items_jitclass = create_array_treap_1d_items_jitclass_fast
