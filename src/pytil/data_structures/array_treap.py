@@ -431,8 +431,8 @@ def create_array_treap_1d_items_jitclass_slow(data_type):
                 raise IndexError("pop index out of range")
             # find node and retrieve item
             node_idx = self.select(index)
-            # copy out the item
-            item = self.data[node_idx].copy()
+            # don't copy out the item as we let the caller define ownership
+            item = self.data[node_idx]
             # delete the node
             self.delete(node_idx)
             return item
@@ -927,8 +927,8 @@ def create_array_treap_1d_items_jitclass_fast(data_type):
                 raise IndexError("pop index out of range")
             # find node and retrieve item
             node_idx = self.select(index)
-            # copy out the item
-            item = self.data[node_idx].copy()
+            # don't copy out the item as we let the caller define ownership
+            item = self.data[node_idx]
             # delete the node
             self.delete(node_idx)
             return item

@@ -40,6 +40,8 @@ def create_array_heap_1d_items_jitclass_direct(data_type):
         ('item_size', nb.int64),
         ('size', nb.int64),
         ('heap', data_type[:, :]),
+        ('output', data_type[:]),  # reusable output array
+        ('buffer', data_type[:]),  # reusable buffer for swaps
     )
 
     @jitclass(spec)
@@ -49,6 +51,8 @@ def create_array_heap_1d_items_jitclass_direct(data_type):
             self.item_size = item_size
             self.size = 0
             self.heap = np.empty((capacity, item_size), dtype=data_type)
+            self.output = np.empty(item_size, dtype=data_type)
+            self.buffer = np.empty(item_size, dtype=data_type)
 
         def heappush(self, item):
             if self.size >= self.capacity:
@@ -60,13 +64,13 @@ def create_array_heap_1d_items_jitclass_direct(data_type):
         def heappop(self):
             if self.size == 0:
                 raise IndexError("Pop from empty heap")
-            lastelt = self.heap[self.size - 1].copy()
+            lastelt = self.heap[self.size - 1]
             self.size -= 1
             if self.size > 0:
-                returnitem = self.heap[0].copy()
+                self.output[:] = self.heap[0]
                 self.heap[0] = lastelt
                 self._siftup(0, self.size)
-                return returnitem
+                return self.output
             return lastelt
 
         def heappeek(self):
@@ -77,10 +81,10 @@ def create_array_heap_1d_items_jitclass_direct(data_type):
         def heapreplace(self, item):
             if self.size == 0:
                 raise IndexError("Replace from empty heap")
-            returnitem = self.heap[0].copy()
+            self.output[:] = self.heap[0]
             self.heap[0] = item
             self._siftup(0, self.size)
-            return returnitem
+            return self.output
 
         def heappushpop(self, item):
             if self.size > 0 and array_is_less(self.heap[0], item):
@@ -93,20 +97,20 @@ def create_array_heap_1d_items_jitclass_direct(data_type):
                 self._siftup(i, self.size)
 
         def _siftdown(self, startpos, pos):
-            newitem = self.heap[pos].copy()
+            self.buffer[:] = self.heap[pos]
             while pos > startpos:
                 parentpos = (pos - 1) >> 1
                 parent = self.heap[parentpos]
-                if array_is_less(newitem, parent):
+                if array_is_less(self.buffer, parent):
                     self.heap[pos] = parent
                     pos = parentpos
                     continue
                 break
-            self.heap[pos] = newitem
+            self.heap[pos] = self.buffer
 
         def _siftup(self, pos, endpos):
             startpos = pos
-            newitem = self.heap[pos].copy()
+            self.buffer[:] = self.heap[pos]
             childpos = 2 * pos + 1
             while childpos < endpos:
                 rightpos = childpos + 1
@@ -115,7 +119,7 @@ def create_array_heap_1d_items_jitclass_direct(data_type):
                 self.heap[pos] = self.heap[childpos]
                 pos = childpos
                 childpos = 2 * pos + 1
-            self.heap[pos] = newitem
+            self.heap[pos] = self.buffer
             self._siftdown(startpos, pos)
 
         def __getitem__(self, index):
@@ -213,7 +217,8 @@ def create_array_heap_1d_items_jitclass_indirect(data_type):
             root_data_idx = self.heap[0]
 
             # 2. Copy the data to return it (since we are about to free the slot)
-            return_item = self.data[root_data_idx].copy()
+            # Actually copy not necessary because we let the user define ownership of the data
+            return_item = self.data[root_data_idx]
 
             # 3. Free the data slot
             self._free_node(root_data_idx)
@@ -261,7 +266,7 @@ def create_array_heap_1d_items_jitclass_indirect(data_type):
             """
             startpos = pos
             new_item_idx = self.heap[pos]
-            new_item_val = self.data[new_item_idx]
+            # new_item_val = self.data[new_item_idx] # AI code had this line but the var is unused
 
             childpos = 2 * pos + 1
             while childpos < endpos:
