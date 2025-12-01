@@ -9,7 +9,7 @@ from numba.typed import List
 
 # Suppose your jitclass factory is in array_heap.py
 from pytil.data_structures.array_heap import (
-    create_array_heap_1d_items_jitclass_indirect as create_array_heap_1d_items_jitclass,
+    get_array_heap_1d_items_jitclass_indirect as get_array_heap_1d_items_jitclass,
 )
 
 
@@ -44,7 +44,7 @@ def create_heap_tests(data_type):
     """
 
     # 1) Create the specialized jitclass
-    HeapClass = create_array_heap_1d_items_jitclass(data_type)
+    HeapClass = get_array_heap_1d_items_jitclass(data_type)
 
     # 2) Decide which item-maker to use and what typed-list element type to use for the oracle
     if data_type == nb.int64:

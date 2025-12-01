@@ -7,7 +7,7 @@ from numba.experimental import jitclass
 
 
 @cache
-def create_array_queue_with_min_0d_items_jitclass(data_type):
+def get_array_queue_with_min_0d_items_jitclass(data_type):
     """
     Factory function to create a queue with min class specialized for storing just single values (as opposed to a numpy array).
     """
@@ -115,7 +115,7 @@ def create_array_queue_with_min_0d_items_jitclass(data_type):
 
 # Quick demonstration / tests
 def _test():
-    QueueWithMin = create_array_queue_with_min_0d_items_jitclass(int64)
+    QueueWithMin = get_array_queue_with_min_0d_items_jitclass(int64)
     q = QueueWithMin(8)
     seq = np.array([5, 3, 7, 2, 2, 9, 1], dtype=np.int64)
     mins = []
@@ -132,7 +132,7 @@ def _test():
 
 # More edge-case tests: duplicates and wrap-around
 def _wrap_test():
-    QueueWithMin = create_array_queue_with_min_0d_items_jitclass(int64)
+    QueueWithMin = get_array_queue_with_min_0d_items_jitclass(int64)
     q = QueueWithMin(4)
     q.enqueue(4)
     q.enqueue(3)

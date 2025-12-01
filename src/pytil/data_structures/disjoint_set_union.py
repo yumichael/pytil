@@ -7,7 +7,7 @@ from numba.experimental import jitclass
 
 
 @cache
-def create_disjoint_set_union_jitclass():
+def get_disjoint_set_union_jitclass():
     spec = (
         ('n', nb.int64),  # total number of elements
         ('parent', nb.int64[:]),  # parent pointer for each element

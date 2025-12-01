@@ -18,7 +18,7 @@ def _stringify_1d_array(array):
 
 
 @cache
-def create_array_vector_1d_items_jitclass(data_type):
+def get_array_vector_1d_items_jitclass(data_type):
     """
     Factory function that creates a jitclass implementing an ArrayVector,
     supporting many of the operations of Python's list (now named vector).

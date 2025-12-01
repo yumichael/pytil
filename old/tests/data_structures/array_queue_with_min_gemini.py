@@ -7,7 +7,7 @@ from numba.experimental import jitclass
 
 
 @cache
-def create_array_queue_with_min_0d_items_jitclass(data_type):
+def get_array_queue_with_min_0d_items_jitclass(data_type):
     """
     Factory function to create a queue with min class specialized for storing just single values (as opposed to a numpy array).
     """

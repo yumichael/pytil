@@ -12,7 +12,7 @@ def stringify_1d_array(array):
 
 
 @cache
-def create_array_stack_1d_items_jitclass(data_type):
+def get_array_stack_1d_items_jitclass(data_type):
     spec = (
         ('capacity', nb.int64),  # Maximum capacity of the stack
         ('item_size', nb.int64),  # Size of the each item

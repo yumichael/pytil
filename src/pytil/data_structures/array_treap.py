@@ -26,7 +26,7 @@ def stringify_1d_array(array):
 
 
 @cache
-def create_array_treap_1d_items_jitclass_slow(data_type):
+def get_array_treap_1d_items_jitclass_slow(data_type):
     """
     Factory function to create a treap class specialized for 1D items
     using only 'array_is_less' to define BST ordering (and equality detection).
@@ -493,7 +493,7 @@ def create_array_treap_1d_items_jitclass_slow(data_type):
 
 
 @cache
-def create_array_treap_1d_items_jitclass_fast(data_type):
+def get_array_treap_1d_items_jitclass_fast(data_type):
     """
     Factory function to create a treap class specialized for 1D items
     using only 'array_is_less' to define BST ordering (and equality detection).
@@ -983,4 +983,4 @@ def create_array_treap_1d_items_jitclass_fast(data_type):
     return ArrayTreap1Fast
 
 
-create_array_treap_1d_items_jitclass = create_array_treap_1d_items_jitclass_fast
+get_array_treap_1d_items_jitclass = get_array_treap_1d_items_jitclass_fast
