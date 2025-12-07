@@ -45,6 +45,7 @@ def get_array_treap_1d_items_jitclass_slow(data_type):
         ('free_list', nb.int64[:]),
         ('free_list_top', nb.int64),
         ('subtree_size', nb.int64[:]),
+        ('path_buffer', nb.int64[:]),
     ]
 
     @jitclass(spec)
@@ -70,6 +71,7 @@ def get_array_treap_1d_items_jitclass_slow(data_type):
             self.left = -np.ones(capacity, dtype=np.int64)
             self.right = -np.ones(capacity, dtype=np.int64)
             self.parent = -np.ones(capacity, dtype=np.int64)
+            self.path_buffer = np.empty(capacity, dtype=np.int64)
 
             # Free list: stack of available node indices
             self.free_list = np.empty(capacity, dtype=np.int64)
@@ -131,11 +133,11 @@ def get_array_treap_1d_items_jitclass_slow(data_type):
             self._recalc(x)
             self._recalc(y)
 
-            # Then update the rest of the chain.
-            temp = self.parent[y]
-            while temp != -1:
-                self._recalc(temp)
-                temp = self.parent[temp]
+            # Then update the rest of the chain. Actually Claude Sonnet 4.5 says I don't need it.
+            # temp = self.parent[y]
+            # while temp != -1:
+            #     self._recalc(temp)
+            #     temp = self.parent[temp]
 
         def rotate_left(self, x):
             y = self.right[x]
@@ -159,11 +161,11 @@ def get_array_treap_1d_items_jitclass_slow(data_type):
             self._recalc(x)
             self._recalc(y)
 
-            # Then update the rest of the chain.
-            temp = self.parent[y]
-            while temp != -1:
-                self._recalc(temp)
-                temp = self.parent[temp]
+            # Then update the rest of the chain. Actually Claude Sonnet 4.5 says I don't need it.
+            # temp = self.parent[y]
+            # while temp != -1:
+            #     self._recalc(temp)
+            #     temp = self.parent[temp]
 
         def insert(self, item):
             """
@@ -179,9 +181,10 @@ def get_array_treap_1d_items_jitclass_slow(data_type):
             # Search for insertion point
             cur = self.root
             parent = -1
-            path = []
+            path_size = 0
             while cur != -1:
-                path.append(cur)
+                self.path_buffer[path_size] = cur
+                path_size += 1
                 parent = cur
                 if array_is_less(item, self.data[cur]):
                     cur = self.left[cur]
@@ -197,8 +200,8 @@ def get_array_treap_1d_items_jitclass_slow(data_type):
                 self.right[parent] = new_idx
 
             # Update subtree sizes along the path
-            for node in path:
-                self.subtree_size[node] += 1
+            for path_index in range(path_size):
+                self.subtree_size[self.path_buffer[path_index]] += 1
 
             # Bubble up based on priority
             cur = new_idx
@@ -523,6 +526,7 @@ def get_array_treap_1d_items_jitclass_fast(data_type):
         ('nodes', nb.int64[:, :]),
         ('free_list', nb.int64[:]),
         ('free_list_top', nb.int64),
+        ('path_buffer', nb.int64[:]),
     ]
 
     @jitclass(spec)
@@ -545,6 +549,7 @@ def get_array_treap_1d_items_jitclass_fast(data_type):
 
             # Preallocate arrays
             self.data = np.empty((capacity, item_size), dtype=data_type)
+            self.path_buffer = np.empty(capacity, dtype=np.int64)
 
             # Allocate and initialize the unified node metadata array
             self.nodes = np.empty((capacity, NODE_FIELDS), dtype=np.int64)
@@ -618,11 +623,11 @@ def get_array_treap_1d_items_jitclass_fast(data_type):
             self._recalc(x)
             self._recalc(y)
 
-            # Then update the rest of the chain.
-            temp = self.nodes[y, PARENT]
-            while temp != -1:
-                self._recalc(temp)
-                temp = self.nodes[temp, PARENT]
+            # Then update the rest of the chain. Actually Claude Sonnet 4.5 says I don't need it.
+            # temp = self.nodes[y, PARENT]
+            # while temp != -1:
+            #     self._recalc(temp)
+            #     temp = self.nodes[temp, PARENT]
 
         def rotate_left(self, x):
             y = self.nodes[x, RIGHT]
@@ -647,11 +652,11 @@ def get_array_treap_1d_items_jitclass_fast(data_type):
             self._recalc(x)
             self._recalc(y)
 
-            # Then update the rest of the chain.
-            temp = self.nodes[y, PARENT]
-            while temp != -1:
-                self._recalc(temp)
-                temp = self.nodes[temp, PARENT]
+            # Then update the rest of the chain. Actually Claude Sonnet 4.5 says I don't need it.
+            # temp = self.nodes[y, PARENT]
+            # while temp != -1:
+            #     self._recalc(temp)
+            #     temp = self.nodes[temp, PARENT]
 
         def insert(self, item):
             """
@@ -667,9 +672,10 @@ def get_array_treap_1d_items_jitclass_fast(data_type):
             # Search for insertion point
             cur = self.root
             parent = -1
-            path = []
+            path_size = 0
             while cur != -1:
-                path.append(cur)
+                self.path_buffer[path_size] = cur
+                path_size += 1
                 parent = cur
                 if array_is_less(item, self.data[cur]):
                     cur = self.nodes[cur, LEFT]
@@ -685,8 +691,8 @@ def get_array_treap_1d_items_jitclass_fast(data_type):
                 self.nodes[parent, RIGHT] = new_idx
 
             # Update subtree sizes along the path
-            for node in path:
-                self.nodes[node, SUBTREE_SIZE] += 1
+            for path_index in range(path_size):
+                self.nodes[self.path_buffer[path_index], SUBTREE_SIZE] += 1
 
             # Bubble up based on priority
             cur = new_idx
