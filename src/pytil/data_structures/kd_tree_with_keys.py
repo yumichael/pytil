@@ -7,9 +7,6 @@ from numba import njit
 from numba.experimental import jitclass
 from numpy.typing import NDArray
 
-# TODO Instead of using loop to copy point, directly assign, as even directly assigning from tuple is supported in Numba.
-# TODO Try make into Array of Structs instead of Struct of Arrays for better cache locality.
-
 
 @njit
 def _build_tree_recursive_njit(
@@ -173,8 +170,7 @@ def get_kd_tree_with_keys_jitclass(coordinate_type, key_type, count_type):
                 if self.tree_valid[read_ptr]:
                     if read_ptr != write_ptr:
                         # Copy data
-                        for d in range(self.dim):
-                            self.points[write_ptr, d] = self.points[read_ptr, d]
+                        self.points[write_ptr] = self.points[read_ptr]
                         self.tree_keys[write_ptr] = self.tree_keys[read_ptr]
 
                     write_ptr += 1
@@ -233,8 +229,7 @@ def get_kd_tree_with_keys_jitclass(coordinate_type, key_type, count_type):
             self.next_free_idx += 1
 
             # Copy Point
-            for d in range(self.dim):
-                self.points[idx, d] = point[d]
+            self.points[idx] = point
 
             self.tree_keys[idx] = key
             self.tree_valid[idx] = True
