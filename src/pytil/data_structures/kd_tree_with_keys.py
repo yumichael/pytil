@@ -7,6 +7,10 @@ from numba import njit
 from numba.experimental import jitclass
 from numpy.typing import NDArray
 
+# TODO Let's consider AoS vs SoA. By AoS, I mean make the relevant array variables a single 2-D array instead, and index into the second dimension with CONSTANTS to find which of the different values we want. I'm not familiar with the inner workings of the code, but isn't this at least possible to do with tree_left and tree_right? Maybe you can add tree_axis and tree_valid into the 2-D array as well. I don't know, maybe even you can add tree_keys if the logic makes sense, although you would have to unify the count_type with the key_type (which is fine for me by the way, in fact please unify the count_type with key_type if it meant you could make a more efficient AoS).
+
+# TODO Would you be sure that with any possible reasonable number of operations the stack size of 64 is enough? Could unbalanced trees cause this to blow up?
+
 
 @njit
 def _build_tree_recursive_njit(
@@ -292,8 +296,6 @@ def get_kd_tree_with_keys_jitclass(coordinate_type, key_type, count_type):
             buffer_count = 0
             max_buffer_len = len(keys_buffer)
 
-            # Note: No array allocation needed for reference_point
-
             while stack_top > 0:
                 stack_top -= 1
                 curr = stack[stack_top]
@@ -331,11 +333,15 @@ def get_kd_tree_with_keys_jitclass(coordinate_type, key_type, count_type):
                 if far_child != -1:
                     # Plane distance check
                     if (diff * diff) <= min_dist_sq + 1e-12:
+                        if stack_top >= MAX_QUERY_DEPTH:
+                            raise OverflowError("Query stack overflow: tree depth exceeds MAX_QUERY_DEPTH.")
                         stack[stack_top] = far_child
                         stack_top += 1
 
                 # Check Near Child
                 if near_child != -1:
+                    if stack_top >= MAX_QUERY_DEPTH:
+                        raise OverflowError("Query stack overflow: tree depth exceeds MAX_QUERY_DEPTH.")
                     stack[stack_top] = near_child
                     stack_top += 1
 
