@@ -17,9 +17,7 @@ def set_seed_njit(seed):
 
 
 def set_seed(seed):
+    '''Last time I checked, there are four random number generators that need to be set independently. We set them here.'''
     set_seed_njit(seed)
     np.random.seed(seed)
     random.seed(seed)
-
-
-set_seed(0)
