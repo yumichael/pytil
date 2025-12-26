@@ -1,3 +1,0 @@
-from pytil.data_structures.kd_tree_with_keys import get_kd_tree_with_keys_jitclass
-
-get_nearest_neighbor_map_jitclass = get_kd_tree_with_keys_jitclass

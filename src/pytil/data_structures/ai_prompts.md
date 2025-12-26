@@ -27,7 +27,6 @@ def get_nearest_neighbor_map_jitclass(count_type, coordinate_type, key_type):
     class NearestNeighborMap:
         def __init__(self, max_size: int, max_key_size: int):
             '''Initialize the data structure allowing for at most max_size number of points to be inserted. Parameter max_key_size is a bound for the key size that can be used to allocate an array for the mapping of keys.'''
-            pass
 
         def __setitem__(self, key: key_type, point: Sequence[coordinate_type]):
             '''Store a 3-D point inside the data structure labelled with key.'''
@@ -79,3 +78,43 @@ Another thing, you don't have to assign point coordinates in a loop over the dim
 Please give me the diff of your changes first so I can easily verify.
 
 Let's revisit the AoS vs SoA. By AoS, I mean make the relevant array variables a single 2-D array intsead, and index into the second dimension with CONSTANTS to find which of the different values we want. I'm not familiar with the inner workings of the code, but isn't this at least possible to do with tree_left and tree_right? Maybe you can add tree_axis and tree_valid into the 2-D array as well. I don't know, maybe even you can add tree_keys if the logic makes sense, although you would have to unify the count_type with the key_type (which is fine for me by the way).
+
+##########################
+
+Can you make the following changes:
+
+- Rename the concept of a key to that of a label everywhere
+- Rename `get_closest_points_assign` to `get_all_nearest_labels_assign`
+- Add this method:
+
+```python
+def get_nearest(reference_point: Sequence[coordinate_type]) -> tuple[Sequence[coordinate_type], label_type]:
+    '''Return any one nearest point and its label as measured from the reference point.'''
+```
+
+- Reorder the parameters of `_build_tree_recursive_njit` as `_build_tree_recursive_njit(points, tree_data, indices, depth, dim, count_type, coordinate_type)`
+- Rename `get_kd_tree_with_keys_jitclass` to `get_kd_tree_with_labeled_points_jitclass`
+- Reorder the parameters of `get_kd_tree_with_labeled_points_jitclass` as `get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_type)`
+- Rename `nearest_neighbor_map_spec` to `kd_tree_with_labeled_points_spec`
+- Rename `KdTreeWithKeys` to `KdTreeWithLabeledPoints`
+- Note that the file should be renamed `kd_tree_with_labeled_points.py`
+- Also let me know if you see anything else that should be changed to keep things consistent with the new changes I am asking for, and go ahead and make the adjustments you came up with.
+
+#########################
+
+Can you make the following changes:
+
+- The concept "nearest neighbor map" should be renamed to "nearest neighbor index"
+- The concept of "key" should be renamed to "label"
+- The API `get_closest_points_assign` has been changed to `get_all_nearest_labels_assign`
+- Support testing a new API in the nearest neighbor index data structure:
+
+```python
+def get_nearest(reference_point: Sequence[coordinate_type]) -> tuple[Sequence[coordinate_type], label_type]:
+    '''Return any one nearest point and its label as measured from the reference point.'''
+```
+
+- Put `get_nearest` just before the `get_all_nearest_labels_assign` in the op flags list
+- The pick ops weights should be `[0.2, 0.2, 0.2, 0.2, 0.1, 0.1]` after the changes
+- Note the file should be renamed `test_nearest_neighbor_index.py`
+- Also let me know if you see anything else that should be changed to keep things consistent with the new changes I am asking for, and go ahead and make the adjustments you came up with.
