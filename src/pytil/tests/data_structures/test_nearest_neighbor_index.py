@@ -38,7 +38,7 @@ def create_nn_index_tests(count_type, coord_type, label_type):
     MAX_CAPACITY = 2**24
     MAX_LABEL_SIZE = 2**24
 
-    # Operation Enums (Updated with get_nearest)
+    # Operation Enums
     OP_INSERT_NEW = 0
     OP_UPDATE_EXIST = 1
     OP_QUERY_NEAREST = 2
@@ -160,8 +160,8 @@ def create_nn_index_tests(count_type, coord_type, label_type):
                     ref_point, oracle_points, oracle_active_labels, oracle_num_active, oracle_labels_buffer
                 )
 
-                # API check: get_nearest returns (point, label)
-                res_point, res_label = nn_index.get_nearest(ref_point)
+                # API check: nearest returns (point, label)
+                res_point, res_label = nn_index.nearest(ref_point)
 
                 # Verify distance of returned point matches oracle min distance
                 dist_sq = 0.0
@@ -170,7 +170,7 @@ def create_nn_index_tests(count_type, coord_type, label_type):
                     dist_sq += diff * diff
 
                 if np.abs(dist_sq - o_min_dist) > 1e-12:
-                    print("get_nearest returned point with incorrect distance.")
+                    print("nearest returned point with incorrect distance.")
                     return False
 
             elif op == OP_QUERY_ALL:
@@ -179,7 +179,7 @@ def create_nn_index_tests(count_type, coord_type, label_type):
                     ref_point, oracle_points, oracle_active_labels, oracle_num_active, oracle_labels_buffer
                 )
                 try:
-                    m_count = nn_index.get_all_nearest_labels_assign(ref_point, nn_index_labels_buffer)
+                    m_count = nn_index.nearest_ties_labels_assign(ref_point, nn_index_labels_buffer)
                 except:
                     if o_count > query_buffer_size:
                         continue
@@ -259,12 +259,12 @@ def create_nn_index_tests(count_type, coord_type, label_type):
             elif op == OP_QUERY_NEAREST:
                 if bench_num_active > 0:
                     ref_point = make_random_point()
-                    res_point, res_label = nn_index.get_nearest(ref_point)
+                    res_point, res_label = nn_index.nearest(ref_point)
 
             elif op == OP_QUERY_ALL:
                 if bench_num_active > 0:
                     ref_point = make_random_point()
-                    count = nn_index.get_all_nearest_labels_assign(ref_point, labels_buffer)
+                    count = nn_index.nearest_ties_labels_assign(ref_point, labels_buffer)
 
             elif op == OP_DEL_EXIST:
                 if bench_num_active > 0:

@@ -231,9 +231,7 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
             self._map_delete(label)
             self.num_active -= 1
 
-        def get_nearest(
-            self, reference_point: Sequence[coordinate_type]
-        ) -> tuple[NDArray[coordinate_type], label_type]:
+        def nearest(self, reference_point: Sequence[coordinate_type]) -> tuple[NDArray[coordinate_type], label_type]:
             '''Return any one nearest point and its label as measured from the reference point.'''
             if self.root == -1 or self.num_active == 0:
                 raise ValueError("Tree is empty.")
@@ -273,7 +271,7 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
 
             return self.points[best_idx], self.tree_labels[best_idx]
 
-        def get_all_nearest_labels_assign(
+        def nearest_ties_labels_assign(
             self, reference_point: Sequence[coordinate_type], labels_buffer: NDArray[label_type]
         ) -> int:
             if self.root == -1 or self.num_active == 0:
