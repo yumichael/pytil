@@ -14,7 +14,6 @@ from numpy.typing import NDArray
 from pytil.data_structures.nearest_neighbor_index import (
     get_nearest_neighbor_index_jitclass,
 )
-from pytil.numba_utility import set_seed
 
 # ==============================================================================
 # 2. Testing & Benchmarking Module
@@ -22,14 +21,11 @@ from pytil.numba_utility import set_seed
 
 
 @cache
-def create_nn_index_tests(count_type, coord_type, label_type):
+def get_nn_index_tests(count_type, coord_type, label_type):
     """
     Factory that creates two specialized Numba-jitted functions:
-    1. correctness_test(n_ops, weights, target_size)
-    2. benchmark_test(n_ops, weights, target_size)
-
-    weights is a float array of size 6:
-    [w_insert_new, w_update_exist, w_query_nearest, w_query_all, w_del_exist, w_del_missing]
+    1. correctness_test(rng, n_ops, weights, target_size)
+    2. benchmark_test(rng, n_ops, weights, target_size)
     """
     NNIndexClass = get_nearest_neighbor_index_jitclass(count_type, coord_type, label_type)
 
@@ -47,18 +43,18 @@ def create_nn_index_tests(count_type, coord_type, label_type):
     OP_DEL_MISSING = 5
 
     @njit
-    def make_random_point():
+    def make_random_point(rng):
         res = np.empty(DIM, dtype=coord_type)
         for i in range(DIM):
-            res[i] = np.random.rand()
+            res[i] = rng.random()
         return res
 
     @njit
-    def make_random_label():
-        return label_type(np.random.randint(0, MAX_LABEL_SIZE))
+    def make_random_label(rng):
+        return label_type(rng.integers(0, MAX_LABEL_SIZE))
 
     @njit
-    def pick_operation(weights, current_size, target_size):
+    def pick_operation(rng, weights, current_size, target_size):
         weights_length = len(weights)
         w = np.empty(weights_length, dtype=np.float64)
         for i in range(weights_length):
@@ -78,7 +74,7 @@ def create_nn_index_tests(count_type, coord_type, label_type):
         if total <= 1e-12:
             assert False
 
-        r = np.random.rand() * total
+        r = rng.random() * total
         cumulative = 0.0
         for i in range(weights_length):
             cumulative += w[i]
@@ -113,7 +109,7 @@ def create_nn_index_tests(count_type, coord_type, label_type):
         return buffer_count, min_dist_sq
 
     @njit
-    def correctness_test(n_ops: int, weights: NDArray, target_size: int, record: NDArray) -> bool:
+    def correctness_test(rng, n_ops: int, weights: NDArray, target_size: int, record: NDArray) -> bool:
         nn_index = NNIndexClass(MAX_CAPACITY, DIM, MAX_LABEL_SIZE)
 
         # Oracle Structures
@@ -127,19 +123,19 @@ def create_nn_index_tests(count_type, coord_type, label_type):
         oracle_labels_buffer = np.zeros(query_buffer_size, dtype=label_type)
 
         for _ in range(n_ops):
-            op = pick_operation(weights, oracle_num_active, target_size)
+            op = pick_operation(rng, weights, oracle_num_active, target_size)
             record[op] += 1
 
             if op == OP_INSERT_NEW:
-                label = make_random_label()
+                label = make_random_label(rng)
                 retries = 0
                 while oracle_label_to_idx[label] != -1 and retries < 10:
-                    label = make_random_label()
+                    label = make_random_label(rng)
                     retries += 1
                 if oracle_label_to_idx[label] != -1:
                     continue
 
-                point = make_random_point()
+                point = make_random_point(rng)
                 nn_index[label] = point
                 idx = oracle_num_active
                 oracle_active_labels[idx] = label
@@ -148,33 +144,30 @@ def create_nn_index_tests(count_type, coord_type, label_type):
                 oracle_num_active += 1
 
             elif op == OP_UPDATE_EXIST:
-                rand_idx = np.random.randint(0, oracle_num_active)
+                rand_idx = rng.integers(0, oracle_num_active)
                 label = oracle_active_labels[rand_idx]
-                point = make_random_point()
+                point = make_random_point(rng)
                 nn_index[label] = point
                 oracle_points[label] = point
 
             elif op == OP_QUERY_NEAREST:
-                ref_point = make_random_point()
+                ref_point = make_random_point(rng)
                 _, o_min_dist = oracle_closest_points(
                     ref_point, oracle_points, oracle_active_labels, oracle_num_active, oracle_labels_buffer
                 )
 
-                # API check: nearest returns (point, label)
                 res_point, res_label = nn_index.nearest(ref_point)
 
-                # Verify distance of returned point matches oracle min distance
                 dist_sq = 0.0
                 for d in range(DIM):
                     diff = res_point[d] - ref_point[d]
                     dist_sq += diff * diff
 
                 if np.abs(dist_sq - o_min_dist) > 1e-12:
-                    print("nearest returned point with incorrect distance.")
                     return False
 
             elif op == OP_QUERY_ALL:
-                ref_point = make_random_point()
+                ref_point = make_random_point(rng)
                 o_count, _ = oracle_closest_points(
                     ref_point, oracle_points, oracle_active_labels, oracle_num_active, oracle_labels_buffer
                 )
@@ -186,7 +179,6 @@ def create_nn_index_tests(count_type, coord_type, label_type):
                     return False
 
                 if m_count != o_count:
-                    print(f"Query count mismatch: Index {m_count}, Oracle {o_count}")
                     return False
 
                 if m_count > 0:
@@ -196,7 +188,7 @@ def create_nn_index_tests(count_type, coord_type, label_type):
                         return False
 
             elif op == OP_DEL_EXIST:
-                rand_idx = np.random.randint(0, oracle_num_active)
+                rand_idx = rng.integers(0, oracle_num_active)
                 label = oracle_active_labels[rand_idx]
                 try:
                     nn_index.remove(label)
@@ -211,9 +203,9 @@ def create_nn_index_tests(count_type, coord_type, label_type):
                 oracle_num_active -= 1
 
             elif op == OP_DEL_MISSING:
-                label = make_random_label()
+                label = make_random_label(rng)
                 while oracle_label_to_idx[label] != -1:
-                    label = make_random_label()
+                    label = make_random_label(rng)
                 try:
                     nn_index.remove(label)
                     return False
@@ -221,14 +213,14 @@ def create_nn_index_tests(count_type, coord_type, label_type):
                     pass
 
             else:
-                assert False
+                assert False, 'Unknown operation'
 
             if len(nn_index) != oracle_num_active:
                 return False
         return True
 
     @njit
-    def benchmark_test(n_ops: int, weights: NDArray, target_size: int, record: NDArray):
+    def benchmark_test(rng, n_ops: int, weights: NDArray, target_size: int, record: NDArray):
         nn_index = NNIndexClass(MAX_CAPACITY, DIM, MAX_LABEL_SIZE)
         labels_buffer = np.zeros(5, dtype=label_type)
         bench_active_labels = np.zeros(MAX_CAPACITY, dtype=label_type)
@@ -236,13 +228,13 @@ def create_nn_index_tests(count_type, coord_type, label_type):
         bench_label_to_idx = np.full(MAX_LABEL_SIZE, -1, dtype=np.int64)
 
         for _ in range(n_ops):
-            op = pick_operation(weights, bench_num_active, target_size)
+            op = pick_operation(rng, weights, bench_num_active, target_size)
             record[op] += 1
 
             if op == OP_INSERT_NEW:
-                label = make_random_label()
+                label = make_random_label(rng)
                 if bench_label_to_idx[label] == -1:
-                    point = make_random_point()
+                    point = make_random_point(rng)
                     nn_index[label] = (point[0], point[1], point[2])
                     idx = bench_num_active
                     bench_active_labels[idx] = label
@@ -251,24 +243,24 @@ def create_nn_index_tests(count_type, coord_type, label_type):
 
             elif op == OP_UPDATE_EXIST:
                 if bench_num_active > 0:
-                    rand_idx = np.random.randint(0, bench_num_active)
+                    rand_idx = rng.integers(0, bench_num_active)
                     label = bench_active_labels[rand_idx]
-                    point = make_random_point()
+                    point = make_random_point(rng)
                     nn_index[label] = (point[0], point[1], point[2])
 
             elif op == OP_QUERY_NEAREST:
                 if bench_num_active > 0:
-                    ref_point = make_random_point()
+                    ref_point = make_random_point(rng)
                     res_point, res_label = nn_index.nearest(ref_point)
 
             elif op == OP_QUERY_ALL:
                 if bench_num_active > 0:
-                    ref_point = make_random_point()
+                    ref_point = make_random_point(rng)
                     count = nn_index.nearest_ties_labels_assign(ref_point, labels_buffer)
 
             elif op == OP_DEL_EXIST:
                 if bench_num_active > 0:
-                    rand_idx = np.random.randint(0, bench_num_active)
+                    rand_idx = rng.integers(0, bench_num_active)
                     label = bench_active_labels[rand_idx]
                     nn_index.remove(label)
                     last_idx = bench_num_active - 1
@@ -279,7 +271,7 @@ def create_nn_index_tests(count_type, coord_type, label_type):
                     bench_num_active -= 1
 
             elif op == OP_DEL_MISSING:
-                label = make_random_label()
+                label = make_random_label(rng)
                 if bench_label_to_idx[label] == -1:
                     try:
                         nn_index.remove(label)
@@ -287,25 +279,27 @@ def create_nn_index_tests(count_type, coord_type, label_type):
                         pass
 
             else:
-                assert False
+                assert False, 'Unknown operation'
 
     return correctness_test, benchmark_test
 
 
 if __name__ == "__main__":
-    count_type, coord_type, label_type = np.int64, np.float64, np.int64
-    set_seed(42)
+    count_type, coord_type, label_type = np.int32, np.float64, np.int32
 
-    correctness_func, benchmark_func = create_nn_index_tests(count_type, coord_type, label_type)
+    rng = np.random.default_rng(42)
+
+    correctness_func, benchmark_func = get_nn_index_tests(count_type, coord_type, label_type)
 
     # Weights: [InsertNew, UpdateExist, QueryNearest, QueryAll, DelExist, DelMissing]
-    w_correctness = np.array([0.2, 0.2, 0.1, 0.1, 0.2, 0.2], dtype=np.float64)
 
     print(f"Running Correctness Test...")
+    w_correctness = np.array([0.2, 0.2, 0.1, 0.1, 0.2, 0.2], dtype=np.float64)
     record = np.zeros(len(w_correctness), dtype=np.int64)
-    correctness_func(100, w_correctness, 50, record)  # Warmup
+    correctness_func(rng, 100, w_correctness, 50, record)  # Warmup
+
     record = np.zeros(len(w_correctness), dtype=np.int64)
-    ok = correctness_func(10_000, w_correctness, 500, record)
+    ok = correctness_func(rng, 10_000, w_correctness, 500, record)
     print("Operation counts:", record)
     if ok:
         print("✅ Correctness Test PASSED")
@@ -314,11 +308,12 @@ if __name__ == "__main__":
         exit(1)
 
     print(f"\nRunning Benchmark Test...")
-    w_benchmark = np.array([0.2, 0.2, 0.2, 0.2, 0.2, 0.0], dtype=np.float64)
+    w_benchmark = np.array([0.25, 0.25, 0.25, 0.0, 0.25, 0.0], dtype=np.float64)
     record = np.zeros(len(w_correctness), dtype=np.int64)
-    benchmark_func(100, w_benchmark, 50, record)  # Warmup
+    benchmark_func(rng, 100, w_benchmark, 50, record)  # Warmup
+
     t0 = time.time()
     record = np.zeros(len(w_correctness), dtype=np.int64)
-    benchmark_func(2**22, w_benchmark, 4096, record)
+    benchmark_func(rng, 2**22, w_benchmark, 4096 * 4, record)
     print("Operation counts:", record)
     print(f"Benchmark finished in {time.time()-t0:.4f}s")
