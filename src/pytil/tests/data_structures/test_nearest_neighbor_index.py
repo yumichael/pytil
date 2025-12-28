@@ -110,7 +110,7 @@ def get_nn_index_tests(count_type, coord_type, label_type):
         return buffer_count, min_dist_sq
 
     @njit
-    def correctness_test(rng, n_ops: int, weights: NDArray, target_size: int, record: NDArray) -> bool:
+    def correctness_test(rng, n_ops: int, weights: NDArray, target_size: int, record: NDArray) -> tuple[bool, str]:
         nn_index = NNIndexClass(MAX_CAPACITY, DIM, MAX_LABEL_SIZE)
 
         # Oracle Structures
@@ -123,7 +123,7 @@ def get_nn_index_tests(count_type, coord_type, label_type):
         nn_index_labels_buffer = np.zeros(query_buffer_size, dtype=label_type)
         oracle_labels_buffer = np.zeros(query_buffer_size, dtype=label_type)
 
-        for _ in range(n_ops):
+        for op_num in range(n_ops):
             op = pick_operation(rng, weights, oracle_num_active, target_size)
             record[op] += 1
 
@@ -165,34 +165,37 @@ def get_nn_index_tests(count_type, coord_type, label_type):
                     dist_sq += diff * diff
 
                 if np.abs(dist_sq - o_min_dist) > 1e-12:
-                    return False
+                    return (
+                        False,
+                        f"QUERY_NEAREST distance mismatch at op {op_num}: nn_index={dist_sq}, oracle={o_min_dist}",
+                    )
 
             elif op == OP_QUERY_ALL:
                 ref_point = make_random_point(rng)
                 o_count, _ = oracle_closest_points(
                     ref_point, oracle_points, oracle_active_labels, oracle_num_active, oracle_labels_buffer
                 )
-                try:
-                    m_count = nn_index.nearest_ties_labels_assign(ref_point, nn_index_labels_buffer)
-                except:
-                    return False
+                # try:
+                m_count = nn_index.nearest_ties_labels_assign(ref_point, nn_index_labels_buffer)
+                # except Exception as e:
+                #     return False, f"QUERY_ALL exception at op {op_num}: {e}"
 
                 if m_count != o_count:
-                    return False
+                    return False, f"QUERY_ALL count mismatch at op {op_num}: nn_index={m_count}, oracle={o_count}"
 
                 if m_count > 0:
                     m_labels_sorted = np.sort(nn_index_labels_buffer[:m_count])
                     o_labels_sorted = np.sort(oracle_labels_buffer[:o_count])
                     if not np.all(m_labels_sorted == o_labels_sorted):
-                        return False
+                        return False, f"QUERY_ALL labels mismatch at op {op_num}: nn_index labels != oracle labels"
 
             elif op == OP_DEL_EXIST:
                 rand_idx = rng.integers(0, oracle_num_active)
                 label = oracle_active_labels[rand_idx]
-                try:
-                    nn_index.remove(label)
-                except:
-                    return False
+                # try:
+                nn_index.remove(label)
+                # except Exception as e:
+                #     return False, f"DEL_EXIST exception at op {op_num} for label {label}: {e}"
 
                 last_idx = oracle_num_active - 1
                 last_label = oracle_active_labels[last_idx]
@@ -207,16 +210,20 @@ def get_nn_index_tests(count_type, coord_type, label_type):
                     label = make_random_label(rng)
                 try:
                     nn_index.remove(label)
-                    return False
+                    return False, f"DEL_MISSING should have raised exception at op {op_num} for label {label}"
                 except:
                     pass
 
             else:
-                assert False, 'Unknown operation'
+                return False, f"Unknown operation {op} at op {op_num}"
 
             if len(nn_index) != oracle_num_active:
-                return False
-        return True
+                return (
+                    False,
+                    f"Size mismatch at op {op_num}: nn_index size={len(nn_index)}, oracle size={oracle_num_active}",
+                )
+
+        return True, "All tests passed"
 
     @njit
     def benchmark_test(rng, n_ops: int, weights: NDArray, target_size: int, record: NDArray):
@@ -298,12 +305,12 @@ if __name__ == "__main__":
     correctness_func(rng, 100, w_correctness, 50, record)  # Warmup
 
     record = np.zeros(len(w_correctness), dtype=np.int64)
-    ok = correctness_func(rng, 10_000, w_correctness, 500, record)
+    ok, message = correctness_func(rng, 10_000, w_correctness, 500, record)
     print("Operation counts:", record)
     if ok:
-        print("✅ Correctness Test PASSED")
+        print(f"✅ Correctness Test PASSED: {message}")
     else:
-        print("❌ Correctness Test FAILED")
+        print(f"❌ Correctness Test FAILED: {message}")
         exit(1)
 
     print(f"\nRunning Benchmark Test...")
