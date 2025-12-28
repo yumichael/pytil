@@ -33,6 +33,7 @@ def get_nn_index_tests(count_type, coord_type, label_type):
     DIM = 3
     MAX_CAPACITY = 2**24
     MAX_LABEL_SIZE = 2**24
+    MAX_QUERY_BUFFER_SIZE = 256
 
     # Operation Enums
     OP_INSERT_NEW = 0
@@ -103,9 +104,9 @@ def get_nn_index_tests(count_type, coord_type, label_type):
                 labels_buffer[buffer_count] = l
                 buffer_count += 1
             elif np.abs(dist_sq - min_dist_sq) <= 1e-12:
-                if buffer_count < max_buffer_len:
-                    labels_buffer[buffer_count] = l
-                    buffer_count += 1
+                assert buffer_count < max_buffer_len
+                labels_buffer[buffer_count] = l
+                buffer_count += 1
         return buffer_count, min_dist_sq
 
     @njit
@@ -118,7 +119,7 @@ def get_nn_index_tests(count_type, coord_type, label_type):
         oracle_num_active = 0
         oracle_label_to_idx = np.full(MAX_LABEL_SIZE, -1, dtype=np.int64)
 
-        query_buffer_size = 5
+        query_buffer_size = MAX_QUERY_BUFFER_SIZE
         nn_index_labels_buffer = np.zeros(query_buffer_size, dtype=label_type)
         oracle_labels_buffer = np.zeros(query_buffer_size, dtype=label_type)
 
@@ -174,8 +175,6 @@ def get_nn_index_tests(count_type, coord_type, label_type):
                 try:
                     m_count = nn_index.nearest_ties_labels_assign(ref_point, nn_index_labels_buffer)
                 except:
-                    if o_count > query_buffer_size:
-                        continue
                     return False
 
                 if m_count != o_count:
@@ -222,7 +221,7 @@ def get_nn_index_tests(count_type, coord_type, label_type):
     @njit
     def benchmark_test(rng, n_ops: int, weights: NDArray, target_size: int, record: NDArray):
         nn_index = NNIndexClass(MAX_CAPACITY, DIM, MAX_LABEL_SIZE)
-        labels_buffer = np.zeros(5, dtype=label_type)
+        labels_buffer = np.zeros(MAX_QUERY_BUFFER_SIZE, dtype=label_type)
         bench_active_labels = np.zeros(MAX_CAPACITY, dtype=label_type)
         bench_num_active = 0
         bench_label_to_idx = np.full(MAX_LABEL_SIZE, -1, dtype=np.int64)
