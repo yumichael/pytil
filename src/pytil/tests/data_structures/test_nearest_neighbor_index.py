@@ -21,13 +21,19 @@ from pytil.data_structures.nearest_neighbor_index import (
 
 
 @cache
-def get_nn_index_tests(count_type, coord_type, label_type):
+def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
     """
     Factory that creates two specialized Numba-jitted functions:
     1. correctness_test(rng, n_ops, weights, target_size)
     2. benchmark_test(rng, n_ops, weights, target_size)
     """
-    NNIndexClass = get_nearest_neighbor_index_jitclass(count_type, coord_type, label_type)
+    NNIndexClass = get_nearest_neighbor_index_jitclass(
+        count_type,
+        coord_type,
+        label_type,
+        rtol=rtol,
+        atol=atol,
+    )
 
     # Constants
     DIM = 3
@@ -85,6 +91,7 @@ def get_nn_index_tests(count_type, coord_type, label_type):
 
     @njit
     def oracle_closest_points(ref_point, oracle_points, oracle_active_labels, oracle_num_active, labels_buffer):
+        """Find all points at minimum distance, using the same tolerance as the data structure."""
         min_dist_sq = np.inf
         buffer_count = 0
         max_buffer_len = len(labels_buffer)
@@ -98,12 +105,12 @@ def get_nn_index_tests(count_type, coord_type, label_type):
                 diff = p[d] - ref_point[d]
                 dist_sq += diff * diff
 
-            if dist_sq < min_dist_sq - 1e-12:
+            if dist_sq < min_dist_sq and not np.isclose(dist_sq, min_dist_sq, rtol=rtol, atol=atol):
                 min_dist_sq = dist_sq
                 buffer_count = 0
                 labels_buffer[buffer_count] = l
                 buffer_count += 1
-            elif np.abs(dist_sq - min_dist_sq) <= 1e-12:
+            elif np.isclose(dist_sq, min_dist_sq, rtol=rtol, atol=atol):
                 assert buffer_count < max_buffer_len
                 labels_buffer[buffer_count] = l
                 buffer_count += 1
@@ -153,32 +160,54 @@ def get_nn_index_tests(count_type, coord_type, label_type):
 
             elif op == OP_QUERY_NEAREST:
                 ref_point = make_random_point(rng)
-                _, o_min_dist = oracle_closest_points(
+                o_count, o_min_dist = oracle_closest_points(
                     ref_point, oracle_points, oracle_active_labels, oracle_num_active, oracle_labels_buffer
                 )
 
                 res_point, res_label = nn_index.nearest(ref_point)
 
+                # Check distance is correct
                 dist_sq = 0.0
                 for d in range(DIM):
                     diff = res_point[d] - ref_point[d]
                     dist_sq += diff * diff
 
-                if np.abs(dist_sq - o_min_dist) > 1e-12:
+                if not np.isclose(dist_sq, o_min_dist, rtol=rtol, atol=atol):
                     return (
                         False,
                         f"QUERY_NEAREST distance mismatch at op {op_num}: nn_index={dist_sq}, oracle={o_min_dist}",
                     )
+
+                # Check that returned label is among the tied labels
+                found = False
+                for i in range(o_count):
+                    if oracle_labels_buffer[i] == res_label:
+                        found = True
+                        break
+                if not found:
+                    return (
+                        False,
+                        f"QUERY_NEAREST label {res_label} not among oracle closest labels at op {op_num}",
+                    )
+
+                # Check tie-breaking: returned label should be the minimum among all tied labels
+                if o_count > 1:
+                    min_label = oracle_labels_buffer[0]
+                    for i in range(1, o_count):
+                        if oracle_labels_buffer[i] < min_label:
+                            min_label = oracle_labels_buffer[i]
+                    if res_label != min_label:
+                        return (
+                            False,
+                            f"QUERY_NEAREST tie-breaking failed at op {op_num}: expected min label {min_label}, got {res_label}",
+                        )
 
             elif op == OP_QUERY_ALL:
                 ref_point = make_random_point(rng)
                 o_count, _ = oracle_closest_points(
                     ref_point, oracle_points, oracle_active_labels, oracle_num_active, oracle_labels_buffer
                 )
-                # try:
                 m_count = nn_index.nearest_ties_labels_assign(ref_point, nn_index_labels_buffer)
-                # except Exception as e:
-                #     return False, f"QUERY_ALL exception at op {op_num}: {e}"
 
                 if m_count != o_count:
                     return False, f"QUERY_ALL count mismatch at op {op_num}: nn_index={m_count}, oracle={o_count}"
@@ -192,10 +221,7 @@ def get_nn_index_tests(count_type, coord_type, label_type):
             elif op == OP_DEL_EXIST:
                 rand_idx = rng.integers(0, oracle_num_active)
                 label = oracle_active_labels[rand_idx]
-                # try:
                 nn_index.remove(label)
-                # except Exception as e:
-                #     return False, f"DEL_EXIST exception at op {op_num} for label {label}: {e}"
 
                 last_idx = oracle_num_active - 1
                 last_label = oracle_active_labels[last_idx]
@@ -290,19 +316,67 @@ def get_nn_index_tests(count_type, coord_type, label_type):
     return correctness_test, benchmark_test
 
 
+def test_tie_breaking_ordering(count_type, coord_type, label_type, rtol, atol):
+    """Specific test to verify that nearest() returns the smallest label in case of ties."""
+
+    NNIndexClass = get_nearest_neighbor_index_jitclass(
+        count_type,
+        coord_type,
+        label_type,
+        rtol=rtol,
+        atol=atol,
+    )
+    nn_index = NNIndexClass(100, 2, 100)
+
+    # Insert points at the same location with different labels
+    # Label order: 5, 2, 8, 1, 3
+    nn_index[5] = np.array([0.5, 0.5], dtype=coord_type)
+    nn_index[2] = np.array([0.5, 0.5], dtype=coord_type)
+    nn_index[8] = np.array([0.5, 0.5], dtype=coord_type)
+    nn_index[1] = np.array([0.5, 0.5], dtype=coord_type)
+    nn_index[3] = np.array([0.5, 0.5], dtype=coord_type)
+
+    # Query from the same location - should return label 1 (smallest)
+    ref_point = np.array([0.5, 0.5], dtype=coord_type)
+    _, result_label = nn_index.nearest(ref_point)
+
+    if result_label != 1:
+        return False, f"Expected label 1 (smallest), got {result_label}"
+
+    # Add a point slightly closer
+    nn_index[10] = np.array([0.500001, 0.5], dtype=coord_type)
+
+    # Query again - should return label 10 if it's clearly closer
+    _, result_label = nn_index.nearest(ref_point)
+    # Depending on tolerance, could be 1 or 10
+    # Let's add a clearly different point
+    nn_index[20] = np.array([0.6, 0.6], dtype=coord_type)
+
+    # Query from near the first cluster - should still return label 1
+    ref_point2 = np.array([0.50000001, 0.50000001], dtype=coord_type)
+    _, result_label2 = nn_index.nearest(ref_point2)
+
+    if result_label2 != 1:
+        return False, f"Expected label 1 from near cluster, got {result_label2}"
+
+    return True, "Tie-breaking test passed"
+
+
 if __name__ == "__main__":
     count_type, coord_type, label_type = np.int32, np.float64, np.int32
+    rtol, atol = 1e-9, 1e-12
 
     rng = np.random.default_rng(42)
 
-    correctness_func, benchmark_func = get_nn_index_tests(count_type, coord_type, label_type)
+    correctness_func, benchmark_func = get_nn_index_tests(count_type, coord_type, label_type, rtol, atol)
 
     # Weights: [InsertNew, UpdateExist, QueryNearest, QueryAll, DelExist, DelMissing]
-
     print(f"Running Correctness Test...")
     w_correctness = np.array([0.2, 0.2, 0.1, 0.1, 0.2, 0.2], dtype=np.float64)
     record = np.zeros(len(w_correctness), dtype=np.int64)
+    t0 = time.time()
     correctness_func(rng, 100, w_correctness, 50, record)  # Warmup
+    print(f"Compilation finished in {time.time()-t0:.4f}s")
 
     record = np.zeros(len(w_correctness), dtype=np.int64)
     ok, message = correctness_func(rng, 10_000, w_correctness, 500, record)
@@ -311,6 +385,15 @@ if __name__ == "__main__":
         print(f"✅ Correctness Test PASSED: {message}")
     else:
         print(f"❌ Correctness Test FAILED: {message}")
+        exit(1)
+
+    # Test tie-breaking specifically
+    print("\nRunning Tie-Breaking Test...")
+    ok, message = test_tie_breaking_ordering(count_type, coord_type, label_type, rtol, atol)
+    if ok:
+        print(f"✅ Tie-Breaking Test PASSED: {message}")
+    else:
+        print(f"❌ Tie-Breaking Test FAILED: {message}")
         exit(1)
 
     print(f"\nRunning Benchmark Test...")

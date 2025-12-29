@@ -52,7 +52,7 @@ def _build_tree_recursive_njit(points, tree_data, indices, depth, dim, count_typ
 
 
 @cache
-def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_type):
+def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_type, *, rtol, atol):
     """
     Factory to create a specialized JIT-compiled KD-Tree class.
 
@@ -60,6 +60,8 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
         count_type: Dtype for internal indexing (e.g., np.int32).
         coordinate_type: Dtype for point coordinates (e.g., np.float32 or np.float64).
         label_type: Dtype for external labels (e.g., np.int32).
+        rtol: Relative tolerance for floating point comparisons.
+        atol: Absolute tolerance for floating point comparisons.
     """
 
     # Rebuild constant: Trigger rebuild if next_free_idx / num_active > REBUILD_RATIO
@@ -232,7 +234,8 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
             self.num_active -= 1
 
         def nearest(self, reference_point: Sequence[coordinate_type]) -> tuple[NDArray[coordinate_type], label_type]:
-            '''Return any one nearest point and its label as measured from the reference point.'''
+            '''Return the nearest point and its label as measured from the reference point.
+            In case of ties (within tolerance), return the point with the smallest label.'''
             if self.root == -1 or self.num_active == 0:
                 raise ValueError("Tree is empty.")
 
@@ -242,6 +245,7 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
 
             min_dist_sq = np.inf
             best_idx = -1
+            best_label = label_type(np.iinfo(label_type).max)
 
             while stack_top > 0:
                 stack_top -= 1
@@ -253,16 +257,27 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
                     dist_sq += diff * diff
 
                 if self.tree_data[curr, IDX_VALID] == 1:
-                    if dist_sq < min_dist_sq:
+                    curr_label = self.tree_labels[curr]
+                    # Update if: better distance, or tied distance with smaller label
+                    is_close = np.isclose(dist_sq, min_dist_sq, rtol=rtol, atol=atol)
+                    if dist_sq < min_dist_sq and not is_close:
                         min_dist_sq = dist_sq
                         best_idx = curr
+                        best_label = curr_label
+                    elif is_close:
+                        if curr_label < best_label:
+                            min_dist_sq = dist_sq
+                            best_idx = curr
+                            best_label = curr_label
 
                 axis = self.tree_data[curr, IDX_AXIS]
                 diff = reference_point[axis] - self.points[curr, axis]
                 near_child = self.tree_data[curr, IDX_LEFT] if diff < 0 else self.tree_data[curr, IDX_RIGHT]
                 far_child = self.tree_data[curr, IDX_RIGHT] if diff < 0 else self.tree_data[curr, IDX_LEFT]
 
-                if far_child != -1 and (diff * diff) < min_dist_sq:
+                if far_child != -1 and (
+                    diff * diff <= min_dist_sq or np.isclose(diff * diff, min_dist_sq, rtol=rtol, atol=atol)
+                ):
                     stack[stack_top] = far_child
                     stack_top += 1
                 if near_child != -1:
@@ -296,12 +311,13 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
                     dist_sq += diff * diff
 
                 if self.tree_data[curr, IDX_VALID] == 1:
-                    if dist_sq < min_dist_sq:
+                    is_close = np.isclose(dist_sq, min_dist_sq, rtol=rtol, atol=atol)
+                    if dist_sq < min_dist_sq and not is_close:
                         min_dist_sq = dist_sq
                         buffer_count = 0
                         labels_buffer[buffer_count] = self.tree_labels[curr]
                         buffer_count += 1
-                    elif dist_sq == min_dist_sq:
+                    elif is_close:
                         if buffer_count < max_buffer_len:
                             labels_buffer[buffer_count] = self.tree_labels[curr]
                             buffer_count += 1
@@ -313,7 +329,9 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
                 near_child = self.tree_data[curr, IDX_LEFT] if diff < 0 else self.tree_data[curr, IDX_RIGHT]
                 far_child = self.tree_data[curr, IDX_RIGHT] if diff < 0 else self.tree_data[curr, IDX_LEFT]
 
-                if far_child != -1 and (diff * diff) <= min_dist_sq + 1e-12:
+                if far_child != -1 and (
+                    diff * diff <= min_dist_sq or np.isclose(diff * diff, min_dist_sq, rtol=rtol, atol=atol)
+                ):
                     stack[stack_top] = far_child
                     stack_top += 1
                 if near_child != -1:
@@ -355,7 +373,7 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
         #             diff = self.points[curr, d] - reference_point[d]
         #             dist_sq += diff * diff
 
-        #         if self.tree_data[curr, IDX_VALID] == 1 and dist_sq < min_dist_sq:
+        #         if self.tree_data[curr, IDX_VALID] == 1 and (dist_sq < min_dist_sq and not np.isclose(dist_sq, min_dist_sq, rtol=rtol, atol=atol)):
         #             min_dist_sq = dist_sq
 
         #         axis = self.tree_data[curr, IDX_AXIS]
@@ -369,7 +387,7 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
         #             stack_top += 1
 
         #         # Strict pruning in phase 1
-        #         if far_child != -1 and (diff * diff) < min_dist_sq:
+        #         if far_child != -1 and (diff * diff < min_dist_sq and not np.isclose(diff * diff, min_dist_sq, rtol=rtol, atol=atol)):
         #             stack[stack_top] = far_child
         #             stack_top += 1
 
@@ -395,7 +413,7 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
         #             diff = self.points[curr, d] - reference_point[d]
         #             dist_sq += diff * diff
 
-        #         if self.tree_data[curr, IDX_VALID] == 1 and abs(dist_sq - min_dist_sq) <= 1e-12:
+        #         if self.tree_data[curr, IDX_VALID] == 1 and np.isclose(dist_sq, min_dist_sq, rtol=rtol, atol=atol):
         #             if buffer_count < max_buffer_len:
         #                 labels_buffer[buffer_count] = self.tree_labels[curr]
         #                 buffer_count += 1
@@ -413,7 +431,7 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
         #             stack_top += 1
 
         #         # Tie-safe pruning in phase 2
-        #         if far_child != -1 and (diff * diff) <= min_dist_sq + 1e-12:
+        #         if far_child != -1 and (diff * diff <= min_dist_sq or np.isclose(diff * diff, min_dist_sq, rtol=rtol, atol=atol)):
         #             stack[stack_top] = far_child
         #             stack_top += 1
 
