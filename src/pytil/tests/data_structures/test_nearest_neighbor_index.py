@@ -137,10 +137,12 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
             if op == OP_INSERT_NEW:
                 label = make_random_label(rng)
                 retries = 0
+                # TODO stop doing rejection sampling and work to get a good label for sure.
                 while oracle_label_to_idx[label] != -1 and retries < 10:
                     label = make_random_label(rng)
                     retries += 1
                 if oracle_label_to_idx[label] != -1:
+                    record[op] -= 1
                     continue
 
                 point = make_random_point(rng)
@@ -261,11 +263,12 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
 
         for _ in range(n_ops):
             op = pick_operation(rng, weights, bench_num_active, target_size)
-            record[op] += 1
 
             if op == OP_INSERT_NEW:
                 label = make_random_label(rng)
+                # TODO Work to get a good label for sure.
                 if bench_label_to_idx[label] == -1:
+                    record[op] += 1
                     point = make_random_point(rng)
                     nn_index[label] = (point[0], point[1], point[2])
                     idx = bench_num_active
@@ -275,6 +278,7 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
 
             elif op == OP_UPDATE_EXIST:
                 if bench_num_active > 0:
+                    record[op] += 1
                     rand_idx = rng.integers(0, bench_num_active)
                     label = bench_active_labels[rand_idx]
                     point = make_random_point(rng)
@@ -282,16 +286,19 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
 
             elif op == OP_QUERY_NEAREST:
                 if bench_num_active > 0:
+                    record[op] += 1
                     ref_point = make_random_point(rng)
                     res_point, res_label = nn_index.nearest(ref_point)
 
             elif op == OP_QUERY_ALL:
                 if bench_num_active > 0:
+                    record[op] += 1
                     ref_point = make_random_point(rng)
                     count = nn_index.nearest_ties_labels_assign(ref_point, labels_buffer)
 
             elif op == OP_DEL_EXIST:
                 if bench_num_active > 0:
+                    record[op] += 1
                     rand_idx = rng.integers(0, bench_num_active)
                     label = bench_active_labels[rand_idx]
                     nn_index.remove(label)
@@ -306,6 +313,7 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
                 label = make_random_label(rng)
                 if bench_label_to_idx[label] == -1:
                     try:
+                        record[op] += 1
                         nn_index.remove(label)
                     except:
                         pass
