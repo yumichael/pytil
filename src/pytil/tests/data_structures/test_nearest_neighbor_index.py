@@ -10,10 +10,115 @@ from numba import njit
 from numba.experimental import jitclass
 from numpy.typing import NDArray
 
-# Updated imports to reflect "index" naming
 from pytil.data_structures.nearest_neighbor_index import (
     get_nearest_neighbor_index_jitclass,
 )
+
+# ==============================================================================
+# 1. Random Sampling Data Structure for Labels
+# ==============================================================================
+
+
+@cache
+def get_label_sampler_jitclass(label_type):
+    """
+    Factory that creates a jitclass for efficiently sampling random labels by activity status.
+
+    This data structure maintains labels partitioned into active and inactive sets and supports:
+    - O(1) random sampling of active or inactive labels
+    - O(1) toggling a label between active and inactive
+    - O(1) checking if a label is active
+    """
+
+    label_type_numba = nb.from_dtype(label_type)
+
+    spec = [
+        ('labels', label_type_numba[:]),  # Array of all labels [active_labels | inactive_labels]
+        ('positions', label_type_numba[:]),  # Maps label -> position in labels array
+        ('num_active', label_type_numba),  # Number of active labels (active labels are at indices [0, num_active))
+        ('capacity', label_type_numba),  # Maximum number of labels
+    ]
+
+    @jitclass(spec)
+    class LabelSampler:
+        def __init__(self, max_labels):
+            """Initialize with all labels as inactive."""
+            self.capacity = label_type(max_labels)
+            self.num_active = label_type(0)
+            self.labels = np.arange(max_labels, dtype=label_type)
+            self.positions = np.arange(max_labels, dtype=label_type)
+
+        def sample_active(self, rng):
+            """Sample a random active label. Returns -1 if none available."""
+            assert self.num_active > 0
+
+            idx = rng.integers(0, self.num_active)
+            return self.labels[idx]
+
+        def sample_inactive(self, rng):
+            """Sample a random inactive label. Returns -1 if none available."""
+            num_inactive = self.capacity - self.num_active
+            assert num_inactive > 0
+
+            idx = rng.integers(self.num_active, self.capacity)
+            return self.labels[idx]
+
+        def mark_active(self, label):
+            """Mark a label as active (move to active partition)."""
+            pos = self.positions[label]
+            assert pos >= self.num_active
+
+            # Swap with first inactive label
+            first_inactive_pos = self.num_active
+            first_inactive_label = self.labels[first_inactive_pos]
+
+            self.labels[pos] = first_inactive_label
+            self.labels[first_inactive_pos] = label
+
+            self.positions[first_inactive_label] = pos
+            self.positions[label] = first_inactive_pos
+
+            self.num_active += 1
+
+        def mark_inactive(self, label):
+            """Mark a label as inactive (move to inactive partition)."""
+            pos = self.positions[label]
+            assert pos < self.num_active
+
+            # Swap with last active label
+            last_active_pos = self.num_active - 1
+            last_active_label = self.labels[last_active_pos]
+
+            self.labels[pos] = last_active_label
+            self.labels[last_active_pos] = label
+
+            self.positions[last_active_label] = pos
+            self.positions[label] = last_active_pos
+
+            self.num_active -= 1
+
+        def is_active(self, label):
+            """Check if a label is currently active."""
+            return self.positions[label] < self.num_active
+
+        def has_active(self):
+            """Check if there are any active labels available."""
+            return self.num_active > 0
+
+        def has_inactive(self):
+            """Check if there are any inactive labels available."""
+            return self.num_active < self.capacity
+
+        def get_active_count(self):
+            """Get the number of active labels."""
+            return self.num_active
+
+        def get_active_label_at_index(self, idx):
+            """Get the active label at a specific index (0 to num_active-1)."""
+            return self.labels[idx]
+
+    return LabelSampler
+
 
 # ==============================================================================
 # 2. Testing & Benchmarking Module
@@ -35,6 +140,8 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
         atol=atol,
     )
 
+    LabelSampler = get_label_sampler_jitclass(label_type)
+
     # Constants
     DIM = 3
     MAX_CAPACITY = 2**24
@@ -55,10 +162,6 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
         for i in range(DIM):
             res[i] = rng.random()
         return res
-
-    @njit
-    def make_random_label(rng):
-        return label_type(rng.integers(0, MAX_LABEL_SIZE))
 
     @njit
     def pick_operation(rng, weights, current_size, target_size):
@@ -90,14 +193,15 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
         return weights_length - 1
 
     @njit
-    def oracle_closest_points(ref_point, oracle_points, oracle_active_labels, oracle_num_active, labels_buffer):
+    def oracle_closest_points(ref_point, oracle_points, label_sampler, labels_buffer):
         """Find all points at minimum distance, using the same tolerance as the data structure."""
         min_dist_sq = np.inf
         buffer_count = 0
         max_buffer_len = len(labels_buffer)
 
-        for i in range(oracle_num_active):
-            l = oracle_active_labels[i]
+        num_active = label_sampler.get_active_count()
+        for i in range(num_active):
+            l = label_sampler.get_active_label_at_index(i)
             p = oracle_points[l]
 
             dist_sq = 0.0
@@ -119,43 +223,32 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
     @njit
     def correctness_test(rng, n_ops: int, weights: NDArray, target_size: int, record: NDArray) -> tuple[bool, str]:
         nn_index = NNIndexClass(MAX_CAPACITY, DIM, MAX_LABEL_SIZE)
+        label_sampler = LabelSampler(MAX_LABEL_SIZE)
 
         # Oracle Structures
         oracle_points = np.zeros((MAX_LABEL_SIZE, DIM), dtype=coord_type)
-        oracle_active_labels = np.zeros(MAX_CAPACITY, dtype=label_type)
-        oracle_num_active = 0
-        oracle_label_to_idx = np.full(MAX_LABEL_SIZE, -1, dtype=np.int64)
 
         query_buffer_size = MAX_QUERY_BUFFER_SIZE
         nn_index_labels_buffer = np.zeros(query_buffer_size, dtype=label_type)
         oracle_labels_buffer = np.zeros(query_buffer_size, dtype=label_type)
 
         for op_num in range(n_ops):
+            oracle_num_active = label_sampler.get_active_count()
             op = pick_operation(rng, weights, oracle_num_active, target_size)
             record[op] += 1
 
             if op == OP_INSERT_NEW:
-                label = make_random_label(rng)
-                retries = 0
-                # TODO stop doing rejection sampling and work to get a good label for sure.
-                while oracle_label_to_idx[label] != -1 and retries < 10:
-                    label = make_random_label(rng)
-                    retries += 1
-                if oracle_label_to_idx[label] != -1:
-                    record[op] -= 1
-                    continue
+                label = label_sampler.sample_inactive(rng)
 
                 point = make_random_point(rng)
                 nn_index[label] = point
-                idx = oracle_num_active
-                oracle_active_labels[idx] = label
-                oracle_label_to_idx[label] = idx
+
+                label_sampler.mark_active(label)
                 oracle_points[label] = point
-                oracle_num_active += 1
 
             elif op == OP_UPDATE_EXIST:
-                rand_idx = rng.integers(0, oracle_num_active)
-                label = oracle_active_labels[rand_idx]
+                label = label_sampler.sample_active(rng)
+
                 point = make_random_point(rng)
                 nn_index[label] = point
                 oracle_points[label] = point
@@ -163,7 +256,7 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
             elif op == OP_QUERY_NEAREST:
                 ref_point = make_random_point(rng)
                 o_count, o_min_dist = oracle_closest_points(
-                    ref_point, oracle_points, oracle_active_labels, oracle_num_active, oracle_labels_buffer
+                    ref_point, oracle_points, label_sampler, oracle_labels_buffer
                 )
 
                 res_point, res_label = nn_index.nearest(ref_point)
@@ -206,9 +299,7 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
 
             elif op == OP_QUERY_ALL:
                 ref_point = make_random_point(rng)
-                o_count, _ = oracle_closest_points(
-                    ref_point, oracle_points, oracle_active_labels, oracle_num_active, oracle_labels_buffer
-                )
+                o_count, _ = oracle_closest_points(ref_point, oracle_points, label_sampler, oracle_labels_buffer)
                 m_count = nn_index.nearest_ties_labels_assign(ref_point, nn_index_labels_buffer)
 
                 if m_count != o_count:
@@ -221,21 +312,14 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
                         return False, f"QUERY_ALL labels mismatch at op {op_num}: nn_index labels != oracle labels"
 
             elif op == OP_DEL_EXIST:
-                rand_idx = rng.integers(0, oracle_num_active)
-                label = oracle_active_labels[rand_idx]
-                nn_index.remove(label)
+                label = label_sampler.sample_active(rng)
 
-                last_idx = oracle_num_active - 1
-                last_label = oracle_active_labels[last_idx]
-                oracle_active_labels[rand_idx] = last_label
-                oracle_label_to_idx[last_label] = rand_idx
-                oracle_label_to_idx[label] = -1
-                oracle_num_active -= 1
+                nn_index.remove(label)
+                label_sampler.mark_inactive(label)
 
             elif op == OP_DEL_MISSING:
-                label = make_random_label(rng)
-                while oracle_label_to_idx[label] != -1:
-                    label = make_random_label(rng)
+                label = label_sampler.sample_inactive(rng)
+
                 try:
                     nn_index.remove(label)
                     return False, f"DEL_MISSING should have raised exception at op {op_num} for label {label}"
@@ -245,6 +329,7 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
             else:
                 return False, f"Unknown operation {op} at op {op_num}"
 
+            oracle_num_active = label_sampler.get_active_count()
             if len(nn_index) != oracle_num_active:
                 return (
                     False,
@@ -256,67 +341,51 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
     @njit
     def benchmark_test(rng, n_ops: int, weights: NDArray, target_size: int, record: NDArray):
         nn_index = NNIndexClass(MAX_CAPACITY, DIM, MAX_LABEL_SIZE)
+        label_sampler = LabelSampler(MAX_LABEL_SIZE)
+
         labels_buffer = np.zeros(MAX_QUERY_BUFFER_SIZE, dtype=label_type)
-        bench_active_labels = np.zeros(MAX_CAPACITY, dtype=label_type)
-        bench_num_active = 0
-        bench_label_to_idx = np.full(MAX_LABEL_SIZE, -1, dtype=np.int64)
 
         for _ in range(n_ops):
+            bench_num_active = label_sampler.get_active_count()
             op = pick_operation(rng, weights, bench_num_active, target_size)
+            record[op] += 1
 
             if op == OP_INSERT_NEW:
-                label = make_random_label(rng)
-                # TODO Work to get a good label for sure.
-                if bench_label_to_idx[label] == -1:
-                    record[op] += 1
-                    point = make_random_point(rng)
-                    nn_index[label] = (point[0], point[1], point[2])
-                    idx = bench_num_active
-                    bench_active_labels[idx] = label
-                    bench_label_to_idx[label] = idx
-                    bench_num_active += 1
+                label = label_sampler.sample_inactive(rng)
+
+                point = make_random_point(rng)
+                nn_index[label] = (point[0], point[1], point[2])
+                label_sampler.mark_active(label)
 
             elif op == OP_UPDATE_EXIST:
-                if bench_num_active > 0:
-                    record[op] += 1
-                    rand_idx = rng.integers(0, bench_num_active)
-                    label = bench_active_labels[rand_idx]
-                    point = make_random_point(rng)
-                    nn_index[label] = (point[0], point[1], point[2])
+                label = label_sampler.sample_active(rng)
+
+                point = make_random_point(rng)
+                nn_index[label] = (point[0], point[1], point[2])
 
             elif op == OP_QUERY_NEAREST:
-                if bench_num_active > 0:
-                    record[op] += 1
-                    ref_point = make_random_point(rng)
-                    res_point, res_label = nn_index.nearest(ref_point)
+                ref_point = make_random_point(rng)
+                res_point, res_label = nn_index.nearest(ref_point)
 
             elif op == OP_QUERY_ALL:
-                if bench_num_active > 0:
-                    record[op] += 1
-                    ref_point = make_random_point(rng)
-                    count = nn_index.nearest_ties_labels_assign(ref_point, labels_buffer)
+                ref_point = make_random_point(rng)
+                count = nn_index.nearest_ties_labels_assign(ref_point, labels_buffer)
 
             elif op == OP_DEL_EXIST:
-                if bench_num_active > 0:
-                    record[op] += 1
-                    rand_idx = rng.integers(0, bench_num_active)
-                    label = bench_active_labels[rand_idx]
-                    nn_index.remove(label)
-                    last_idx = bench_num_active - 1
-                    last_label = bench_active_labels[last_idx]
-                    bench_active_labels[rand_idx] = last_label
-                    bench_label_to_idx[last_label] = rand_idx
-                    bench_label_to_idx[label] = -1
-                    bench_num_active -= 1
+                label = label_sampler.sample_active(rng)
+
+                nn_index.remove(label)
+                label_sampler.mark_inactive(label)
 
             elif op == OP_DEL_MISSING:
-                label = make_random_label(rng)
-                if bench_label_to_idx[label] == -1:
-                    try:
-                        record[op] += 1
-                        nn_index.remove(label)
-                    except:
-                        pass
+                label = label_sampler.sample_inactive(rng)
+
+                try:
+                    nn_index.remove(label)
+                except:
+                    pass
+                else:
+                    assert False, 'DEL_MISSING should have raised exception'
 
             else:
                 assert False, 'Unknown operation'
@@ -371,7 +440,7 @@ def test_tie_breaking_ordering(count_type, coord_type, label_type, rtol, atol):
 
 
 if __name__ == "__main__":
-    count_type, coord_type, label_type = np.int32, np.float64, np.int32
+    count_type, coord_type, label_type = np.int32, np.float32, np.int32
     rtol, atol = 1e-9, 1e-12
 
     rng = np.random.default_rng(42)
@@ -386,9 +455,11 @@ if __name__ == "__main__":
     correctness_func(rng, 100, w_correctness, 50, record)  # Warmup
     print(f"Compilation finished in {time.time()-t0:.4f}s")
 
+    n_ops = 10_000
     record = np.zeros(len(w_correctness), dtype=np.int64)
-    ok, message = correctness_func(rng, 10_000, w_correctness, 500, record)
+    ok, message = correctness_func(rng, n_ops, w_correctness, 500, record)
     print("Operation counts:", record)
+    assert sum(record) == n_ops
     if ok:
         print(f"✅ Correctness Test PASSED: {message}")
     else:
@@ -409,8 +480,10 @@ if __name__ == "__main__":
     record = np.zeros(len(w_correctness), dtype=np.int64)
     benchmark_func(rng, 100, w_benchmark, 50, record)  # Warmup
 
+    n_ops = 2**22
     t0 = time.time()
     record = np.zeros(len(w_correctness), dtype=np.int64)
-    benchmark_func(rng, 2**22, w_benchmark, 4096 * 4, record)
+    benchmark_func(rng, n_ops, w_benchmark, 4096 * 4, record)
     print("Operation counts:", record)
+    assert sum(record) == n_ops
     print(f"Benchmark finished in {time.time()-t0:.4f}s")
