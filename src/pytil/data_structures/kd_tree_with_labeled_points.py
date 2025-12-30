@@ -67,9 +67,9 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
     # Rebuild constant: Trigger rebuild if next_free_idx / num_active > REBUILD_RATIO
     REBUILD_RATIO = 2.0
 
+    count_type_numba = nb.from_dtype(count_type)
     coordinate_type_numba = nb.from_dtype(coordinate_type)
     label_type_numba = nb.from_dtype(label_type)
-    count_type_numba = nb.from_dtype(count_type)
 
     # Tree data indices (for AoS structure)
     IDX_LEFT = 0
