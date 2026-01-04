@@ -1,3 +1,4 @@
+import math
 from collections.abc import Sequence
 from functools import cache
 
@@ -52,7 +53,7 @@ def _build_tree_recursive_njit(points, tree_data, indices, depth, dim, count_typ
 
 
 @cache
-def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_type, *, rtol, atol):
+def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_type):
     """
     Factory to create a specialized JIT-compiled KD-Tree class.
 
@@ -60,8 +61,6 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
         count_type: Dtype for internal indexing (e.g., np.int32).
         coordinate_type: Dtype for point coordinates (e.g., np.float32 or np.float64).
         label_type: Dtype for external labels (e.g., np.int32).
-        rtol: Relative tolerance for floating point comparisons.
-        atol: Absolute tolerance for floating point comparisons.
     """
 
     # Rebuild constant: Trigger rebuild if next_free_idx / num_active > REBUILD_RATIO
@@ -75,6 +74,8 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
         LARGEST_POSSIBLE_LABEL = label_type(np.iinfo(label_type).max)
     else:
         assert False, 'Unsupported label type'
+
+    DEFAULT_ABSOLUTE_TOLERANCE = 0.0
 
     # Tree data indices (for AoS structure)
     IDX_LEFT = 0
@@ -101,6 +102,8 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
         # --- Pre-allocated Query Stack (adaptive size) ---
         ('_query_stack', count_type_numba[:]),
         ('_max_query_depth', count_type_numba),
+        # --- Floating point tolerance ---
+        ('atol', coordinate_type_numba),
     ]
 
     @jitclass(kd_tree_with_labeled_points_spec)
@@ -114,6 +117,7 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
             self.root = -1
             self.dim = dimension_count
             self.max_label_size = max_label_size
+            self.atol = DEFAULT_ABSOLUTE_TOLERANCE
 
             self._max_query_depth = max_size
 
@@ -131,6 +135,9 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
 
             # Pre-allocated stack for nearest neighbor queries
             self._query_stack = np.empty(self._max_query_depth, dtype=count_type)
+
+        def set_absolute_tolerance(self, atol: float):
+            self.atol = atol
 
         def _map_get(self, label: label_type) -> int:
             """Returns index in tree arrays, or -1 if not found."""
@@ -248,7 +255,7 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
             stack[0] = self.root
             stack_top = 1
 
-            min_dist_sq = np.inf
+            min_dist = np.inf
             best_idx = -1
             best_label = LARGEST_POSSIBLE_LABEL
 
@@ -260,29 +267,30 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
                 for d in range(self.dim):
                     diff = self.points[curr, d] - reference_point[d]
                     dist_sq += diff * diff
+                dist = math.sqrt(dist_sq)
 
                 if self.tree_data[curr, IDX_VALID] == 1:
                     curr_label = self.tree_labels[curr]
-                    # Update if: better distance, or tied distance with smaller label
-                    is_close = np.isclose(dist_sq, min_dist_sq, rtol=rtol, atol=atol)
-                    if dist_sq < min_dist_sq and not is_close:
-                        min_dist_sq = dist_sq
+                    if dist < min_dist - self.atol:
+                        # Clear winner
+                        min_dist = dist
                         best_idx = curr
                         best_label = curr_label
-                    elif is_close:
+                    elif abs(dist - min_dist) <= self.atol:
+                        # Tie-break zone
                         if curr_label < best_label:
-                            min_dist_sq = dist_sq
                             best_idx = curr
                             best_label = curr_label
+                        # ALWAYS track the true mathematical minimum to keep the window tight
+                        if dist < min_dist:
+                            min_dist = dist
 
                 axis = self.tree_data[curr, IDX_AXIS]
                 diff = reference_point[axis] - self.points[curr, axis]
                 near_child = self.tree_data[curr, IDX_LEFT] if diff < 0 else self.tree_data[curr, IDX_RIGHT]
                 far_child = self.tree_data[curr, IDX_RIGHT] if diff < 0 else self.tree_data[curr, IDX_LEFT]
 
-                if far_child != -1 and (
-                    diff * diff <= min_dist_sq or np.isclose(diff * diff, min_dist_sq, rtol=rtol, atol=atol)
-                ):
+                if far_child != -1 and abs(diff) <= min_dist + self.atol:
                     stack[stack_top] = far_child
                     stack_top += 1
                 if near_child != -1:

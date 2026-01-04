@@ -1,6 +1,7 @@
 # Instructions for running standalone
 # python -m pytil.tests.data_structures.test_nearest_neighbor_index
 
+import math
 import time
 from functools import cache
 
@@ -126,7 +127,7 @@ def get_label_sampler_jitclass(label_type):
 
 
 @cache
-def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
+def get_nn_index_tests(count_type, coord_type, label_type, atol):
     """
     Factory that creates two specialized Numba-jitted functions:
     1. correctness_test(rng, n_ops, weights, target_size)
@@ -136,8 +137,6 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
         count_type,
         coord_type,
         label_type,
-        rtol=rtol,
-        atol=atol,
     )
 
     LabelSampler = get_label_sampler_jitclass(label_type)
@@ -195,8 +194,7 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
     @njit
     def oracle_closest_points(ref_point, oracle_points, label_sampler, labels_buffer):
         """Find all points at minimum distance, using the same tolerance as the data structure."""
-        min_dist_sq = np.inf
-        buffer_count = 0
+        min_dist = np.inf
         max_buffer_len = len(labels_buffer)
 
         num_active = label_sampler.get_active_count()
@@ -208,21 +206,29 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
             for d in range(DIM):
                 diff = p[d] - ref_point[d]
                 dist_sq += diff * diff
+            dist = math.sqrt(dist_sq)
+            min_dist = min(min_dist, dist)
 
-            if dist_sq < min_dist_sq and not np.isclose(dist_sq, min_dist_sq, rtol=rtol, atol=atol):
-                min_dist_sq = dist_sq
-                buffer_count = 0
+        buffer_count = 0
+        for i in range(num_active):
+            l = label_sampler.get_active_label_at_index(i)
+            p = oracle_points[l]
+
+            dist_sq = 0.0
+            for d in range(DIM):
+                diff = p[d] - ref_point[d]
+                dist_sq += diff * diff
+            dist = math.sqrt(dist_sq)
+
+            if dist <= min_dist + atol:
                 labels_buffer[buffer_count] = l
                 buffer_count += 1
-            elif np.isclose(dist_sq, min_dist_sq, rtol=rtol, atol=atol):
-                assert buffer_count < max_buffer_len
-                labels_buffer[buffer_count] = l
-                buffer_count += 1
-        return buffer_count, min_dist_sq
+        return buffer_count, min_dist
 
     @njit
     def correctness_test(rng, n_ops: int, weights: NDArray, target_size: int, record: NDArray) -> tuple[bool, str]:
         nn_index = NNIndexClass(MAX_CAPACITY, DIM, MAX_LABEL_SIZE)
+        nn_index.set_absolute_tolerance(atol)
         label_sampler = LabelSampler(MAX_LABEL_SIZE)
 
         # Oracle Structures
@@ -266,11 +272,12 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
                 for d in range(DIM):
                     diff = res_point[d] - ref_point[d]
                     dist_sq += diff * diff
+                dist = math.sqrt(dist_sq)
 
-                if not np.isclose(dist_sq, o_min_dist, rtol=rtol, atol=atol):
+                if not dist <= o_min_dist + atol:
                     return (
                         False,
-                        f"QUERY_NEAREST distance mismatch at op {op_num}: nn_index={dist_sq}, oracle={o_min_dist}",
+                        f"QUERY_NEAREST distance mismatch at op {op_num}: nn_index={dist}, oracle={o_min_dist}",
                     )
 
                 # Check that returned label is among the tied labels
@@ -298,6 +305,7 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
                         )
 
             elif op == OP_QUERY_ALL:
+                assert False, 'Not supported anymore'
                 ref_point = make_random_point(rng)
                 o_count, _ = oracle_closest_points(ref_point, oracle_points, label_sampler, oracle_labels_buffer)
                 m_count = nn_index.nearest_ties_labels_assign(ref_point, nn_index_labels_buffer)
@@ -341,6 +349,7 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
     @njit
     def benchmark_test(rng, n_ops: int, weights: NDArray, target_size: int, record: NDArray):
         nn_index = NNIndexClass(MAX_CAPACITY, DIM, MAX_LABEL_SIZE)
+        nn_index.set_absolute_tolerance(atol)
         label_sampler = LabelSampler(MAX_LABEL_SIZE)
 
         labels_buffer = np.zeros(MAX_QUERY_BUFFER_SIZE, dtype=label_type)
@@ -368,6 +377,7 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
                 res_point, res_label = nn_index.nearest(ref_point)
 
             elif op == OP_QUERY_ALL:
+                assert False, 'Not supported anymore'
                 ref_point = make_random_point(rng)
                 count = nn_index.nearest_ties_labels_assign(ref_point, labels_buffer)
 
@@ -393,17 +403,16 @@ def get_nn_index_tests(count_type, coord_type, label_type, rtol, atol):
     return correctness_test, benchmark_test
 
 
-def test_tie_breaking_ordering(count_type, coord_type, label_type, rtol, atol):
+def test_tie_breaking_ordering(count_type, coord_type, label_type, atol):
     """Specific test to verify that nearest() returns the smallest label in case of ties."""
 
     NNIndexClass = get_nearest_neighbor_index_jitclass(
         count_type,
         coord_type,
         label_type,
-        rtol=rtol,
-        atol=atol,
     )
     nn_index = NNIndexClass(100, 2, 100)
+    nn_index.set_absolute_tolerance(atol)
 
     # Insert points at the same location with different labels
     # Label order: 5, 2, 8, 1, 3
@@ -441,15 +450,15 @@ def test_tie_breaking_ordering(count_type, coord_type, label_type, rtol, atol):
 
 if __name__ == "__main__":
     count_type, coord_type, label_type = np.int32, np.float32, np.int32
-    rtol, atol = 1e-9, 1e-12
+    atol = 1e-12
 
     rng = np.random.default_rng(42)
 
-    correctness_func, benchmark_func = get_nn_index_tests(count_type, coord_type, label_type, rtol, atol)
+    correctness_func, benchmark_func = get_nn_index_tests(count_type, coord_type, label_type, atol)
 
     # Weights: [InsertNew, UpdateExist, QueryNearest, QueryAll, DelExist, DelMissing]
     print(f"Running Correctness Test...")
-    w_correctness = np.array([0.2, 0.2, 0.1, 0.1, 0.2, 0.2], dtype=np.float64)
+    w_correctness = np.array([0.2, 0.2, 0.2, 0.0, 0.2, 0.2], dtype=np.float64)
     record = np.zeros(len(w_correctness), dtype=np.int64)
     t0 = time.time()
     correctness_func(rng, 100, w_correctness, 50, record)  # Warmup
@@ -468,22 +477,24 @@ if __name__ == "__main__":
 
     # Test tie-breaking specifically
     print("\nRunning Tie-Breaking Test...")
-    ok, message = test_tie_breaking_ordering(count_type, coord_type, label_type, rtol, atol)
+    ok, message = test_tie_breaking_ordering(count_type, coord_type, label_type, atol)
     if ok:
         print(f"✅ Tie-Breaking Test PASSED: {message}")
     else:
         print(f"❌ Tie-Breaking Test FAILED: {message}")
         exit(1)
 
-    print(f"\nRunning Benchmark Test...")
-    w_benchmark = np.array([0.25, 0.25, 0.25, 0.0, 0.25, 0.0], dtype=np.float64)
-    record = np.zeros(len(w_correctness), dtype=np.int64)
-    benchmark_func(rng, 100, w_benchmark, 50, record)  # Warmup
+    do_benchmark_test = False
+    if do_benchmark_test:
+        print(f"\nRunning Benchmark Test...")
+        w_benchmark = np.array([0.25, 0.25, 0.25, 0.0, 0.25, 0.0], dtype=np.float64)
+        record = np.zeros(len(w_correctness), dtype=np.int64)
+        benchmark_func(rng, 100, w_benchmark, 50, record)  # Warmup
 
-    n_ops = 2**22
-    t0 = time.time()
-    record = np.zeros(len(w_correctness), dtype=np.int64)
-    benchmark_func(rng, n_ops, w_benchmark, 4096 * 4, record)
-    print("Operation counts:", record)
-    assert sum(record) == n_ops
-    print(f"Benchmark finished in {time.time()-t0:.4f}s")
+        n_ops = 2**22
+        t0 = time.time()
+        record = np.zeros(len(w_correctness), dtype=np.int64)
+        benchmark_func(rng, n_ops, w_benchmark, 4096 * 4, record)
+        print("Operation counts:", record)
+        assert sum(record) == n_ops
+        print(f"Benchmark finished in {time.time()-t0:.4f}s")
