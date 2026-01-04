@@ -72,13 +72,14 @@ class DSU:
         return True
 
 
-prime_at_most = 1_000_000  # a max number
-prime_flags = [True] * (prime_at_most + 1)
-prime_flags[0] = prime_flags[1] = False
-for i in range(2, int(prime_at_most**0.5) + 1):
-    prime_flags[i * i : prime_at_most + 1 : i] = [False] * len(prime_flags[i * i : prime_at_most + 1 : i])
-prime_flags = np.asarray(prime_flags, dtype=bool)
-primes = [i for i in range(prime_at_most + 1) if prime_flags[i]]
+def get_primes_up_to(prime_at_most):
+    prime_flags = [True] * (prime_at_most + 1)
+    prime_flags[0] = prime_flags[1] = False
+    for i in range(2, int(prime_at_most**0.5) + 1):
+        prime_flags[i * i : prime_at_most + 1 : i] = [False] * len(prime_flags[i * i : prime_at_most + 1 : i])
+    prime_flags = np.asarray(prime_flags, dtype=bool)
+    primes = [i for i in range(prime_at_most + 1) if prime_flags[i]]
+    return primes
 
 
 cardinal_directions = np.asarray(((1, 0), (0, 1), (-1, 0), (0, -1)))
