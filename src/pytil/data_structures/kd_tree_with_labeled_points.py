@@ -71,6 +71,11 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
     coordinate_type_numba = nb.from_dtype(coordinate_type)
     label_type_numba = nb.from_dtype(label_type)
 
+    if np.issubdtype(label_type, np.integer):
+        LARGEST_POSSIBLE_LABEL = label_type(np.iinfo(label_type).max)
+    else:
+        assert False, 'Unsupported label type'
+
     # Tree data indices (for AoS structure)
     IDX_LEFT = 0
     IDX_RIGHT = 1
@@ -245,7 +250,7 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
 
             min_dist_sq = np.inf
             best_idx = -1
-            best_label = label_type(np.iinfo(label_type).max)
+            best_label = LARGEST_POSSIBLE_LABEL
 
             while stack_top > 0:
                 stack_top -= 1
@@ -290,6 +295,7 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
         def nearest_ties_labels_assign(
             self, reference_point: Sequence[coordinate_type], labels_buffer: NDArray[label_type]
         ) -> int:
+            '''!!! Legacy function. Not kept up to date.'''
             if self.root == -1 or self.num_active == 0:
                 return 0
 
@@ -340,101 +346,109 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
 
             return buffer_count
 
-        # # Two pass algorithm. Too slow when there aren't many ties.
-        # def nearest_ties_labels_assign(
-        #     self,
-        #     reference_point: Sequence[coordinate_type],
-        #     labels_buffer: NDArray[label_type],
-        # ) -> int:
-        #     """
-        #     Writes the labels of all points tied for nearest distance into labels_buffer.
-        #     Returns the number of labels written.
-        #     """
+        # Two pass algorithm. Too slow when there aren't many ties.
+        def nearest_ties_labels_assign_two_pass(
+            self,
+            reference_point: Sequence[coordinate_type],
+            labels_buffer: NDArray[label_type],
+        ) -> int:
+            """
+            !!! Legacy function. Not kept up to date.
 
-        #     # -------------------------------
-        #     # Phase 1: find minimum distance
-        #     # -------------------------------
-        #     stack = self._query_stack
-        #     stack_top = 0
-        #     stack[stack_top] = self.root
-        #     stack_top += 1
+            Writes the labels of all points tied for nearest distance into labels_buffer.
+            Returns the number of labels written.
+            """
 
-        #     min_dist_sq = np.inf
+            # -------------------------------
+            # Phase 1: find minimum distance
+            # -------------------------------
+            stack = self._query_stack
+            stack_top = 0
+            stack[stack_top] = self.root
+            stack_top += 1
 
-        #     while stack_top > 0:
-        #         stack_top -= 1
-        #         curr = stack[stack_top]
-        #         if curr == -1:
-        #             continue
+            min_dist_sq = np.inf
 
-        #         # Distance
-        #         dist_sq = 0.0
-        #         for d in range(self.dim):
-        #             diff = self.points[curr, d] - reference_point[d]
-        #             dist_sq += diff * diff
+            while stack_top > 0:
+                stack_top -= 1
+                curr = stack[stack_top]
+                if curr == -1:
+                    continue
 
-        #         if self.tree_data[curr, IDX_VALID] == 1 and (dist_sq < min_dist_sq and not np.isclose(dist_sq, min_dist_sq, rtol=rtol, atol=atol)):
-        #             min_dist_sq = dist_sq
+                # Distance
+                dist_sq = 0.0
+                for d in range(self.dim):
+                    diff = self.points[curr, d] - reference_point[d]
+                    dist_sq += diff * diff
 
-        #         axis = self.tree_data[curr, IDX_AXIS]
-        #         diff = reference_point[axis] - self.points[curr, axis]
+                if self.tree_data[curr, IDX_VALID] == 1 and (
+                    dist_sq < min_dist_sq and not np.isclose(dist_sq, min_dist_sq, rtol=rtol, atol=atol)
+                ):
+                    min_dist_sq = dist_sq
 
-        #         near_child = self.tree_data[curr, IDX_LEFT] if diff < 0 else self.tree_data[curr, IDX_RIGHT]
-        #         far_child = self.tree_data[curr, IDX_RIGHT] if diff < 0 else self.tree_data[curr, IDX_LEFT]
+                axis = self.tree_data[curr, IDX_AXIS]
+                diff = reference_point[axis] - self.points[curr, axis]
 
-        #         if near_child != -1:
-        #             stack[stack_top] = near_child
-        #             stack_top += 1
+                near_child = self.tree_data[curr, IDX_LEFT] if diff < 0 else self.tree_data[curr, IDX_RIGHT]
+                far_child = self.tree_data[curr, IDX_RIGHT] if diff < 0 else self.tree_data[curr, IDX_LEFT]
 
-        #         # Strict pruning in phase 1
-        #         if far_child != -1 and (diff * diff < min_dist_sq and not np.isclose(diff * diff, min_dist_sq, rtol=rtol, atol=atol)):
-        #             stack[stack_top] = far_child
-        #             stack_top += 1
+                if near_child != -1:
+                    stack[stack_top] = near_child
+                    stack_top += 1
 
-        #     # -------------------------------
-        #     # Phase 2: collect all ties
-        #     # -------------------------------
-        #     stack_top = 0
-        #     stack[stack_top] = self.root
-        #     stack_top += 1
+                # Strict pruning in phase 1
+                if far_child != -1 and (
+                    diff * diff < min_dist_sq and not np.isclose(diff * diff, min_dist_sq, rtol=rtol, atol=atol)
+                ):
+                    stack[stack_top] = far_child
+                    stack_top += 1
 
-        #     buffer_count = 0
-        #     max_buffer_len = len(labels_buffer)
+            # -------------------------------
+            # Phase 2: collect all ties
+            # -------------------------------
+            stack_top = 0
+            stack[stack_top] = self.root
+            stack_top += 1
 
-        #     while stack_top > 0:
-        #         stack_top -= 1
-        #         curr = stack[stack_top]
-        #         if curr == -1:
-        #             continue
+            buffer_count = 0
+            max_buffer_len = len(labels_buffer)
 
-        #         # Distance
-        #         dist_sq = 0.0
-        #         for d in range(self.dim):
-        #             diff = self.points[curr, d] - reference_point[d]
-        #             dist_sq += diff * diff
+            while stack_top > 0:
+                stack_top -= 1
+                curr = stack[stack_top]
+                if curr == -1:
+                    continue
 
-        #         if self.tree_data[curr, IDX_VALID] == 1 and np.isclose(dist_sq, min_dist_sq, rtol=rtol, atol=atol):
-        #             if buffer_count < max_buffer_len:
-        #                 labels_buffer[buffer_count] = self.tree_labels[curr]
-        #                 buffer_count += 1
-        #             else:
-        #                 raise IndexError("labels_buffer too small to hold all nearest ties.")
+                # Distance
+                dist_sq = 0.0
+                for d in range(self.dim):
+                    diff = self.points[curr, d] - reference_point[d]
+                    dist_sq += diff * diff
 
-        #         axis = self.tree_data[curr, IDX_AXIS]
-        #         diff = reference_point[axis] - self.points[curr, axis]
+                if self.tree_data[curr, IDX_VALID] == 1 and np.isclose(dist_sq, min_dist_sq, rtol=rtol, atol=atol):
+                    if buffer_count < max_buffer_len:
+                        labels_buffer[buffer_count] = self.tree_labels[curr]
+                        buffer_count += 1
+                    else:
+                        raise IndexError("labels_buffer too small to hold all nearest ties.")
 
-        #         near_child = self.tree_data[curr, IDX_LEFT] if diff < 0 else self.tree_data[curr, IDX_RIGHT]
-        #         far_child = self.tree_data[curr, IDX_RIGHT] if diff < 0 else self.tree_data[curr, IDX_LEFT]
+                axis = self.tree_data[curr, IDX_AXIS]
+                diff = reference_point[axis] - self.points[curr, axis]
 
-        #         if near_child != -1:
-        #             stack[stack_top] = near_child
-        #             stack_top += 1
+                near_child = self.tree_data[curr, IDX_LEFT] if diff < 0 else self.tree_data[curr, IDX_RIGHT]
+                far_child = self.tree_data[curr, IDX_RIGHT] if diff < 0 else self.tree_data[curr, IDX_LEFT]
 
-        #         # Tie-safe pruning in phase 2
-        #         if far_child != -1 and (diff * diff <= min_dist_sq or np.isclose(diff * diff, min_dist_sq, rtol=rtol, atol=atol)):
-        #             stack[stack_top] = far_child
-        #             stack_top += 1
+                if near_child != -1:
+                    stack[stack_top] = near_child
+                    stack_top += 1
 
-        #     return buffer_count
+                # Tie-safe pruning in phase 2
+                if far_child != -1 and (
+                    diff * diff <= min_dist_sq or np.isclose(diff * diff, min_dist_sq, rtol=rtol, atol=atol)
+                ):
+                    stack[stack_top] = far_child
+                    stack_top += 1
+
+            return buffer_count
 
     return KdTreeWithLabeledPoints
