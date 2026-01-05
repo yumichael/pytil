@@ -10,28 +10,27 @@ from numpy.typing import NDArray
 
 
 @njit(inline='always')
-def _aabb_dist_sq(point, b_min, b_max, dim):
+def _aabb_dist_sq(point, bounds, dim):
     """
     Calculates the squared Euclidean distance from a point to an AABB.
+    Bounds layout: (dim, 2) where [d, 0] is min and [d, 1] is max.
     """
     dist_sq = 0.0
     for d in range(dim):
         v = point[d]
-        min_v = b_min[d]
-        max_v = b_max[d]
-        if v < min_v:
-            diff = min_v - v
+        b_min = bounds[d, 0]
+        b_max = bounds[d, 1]
+        if v < b_min:
+            diff = b_min - v
             dist_sq += diff * diff
-        elif v > max_v:
-            diff = v - max_v
+        elif v > b_max:
+            diff = v - b_max
             dist_sq += diff * diff
     return dist_sq
 
 
 @njit
-def _build_tree_recursive_njit(
-    points, tree_data, tree_mins, tree_maxs, indices, depth, dim, count_type, coordinate_type
-):
+def _build_tree_recursive_njit(points, tree_data, tree_bounds, indices, depth, dim, count_type, coordinate_type):
     """
     Recursive helper to build the tree and compute AABBs for every node.
     """
@@ -42,7 +41,7 @@ def _build_tree_recursive_njit(
     axis = depth % dim
     mid = N // 2
 
-    # Sort indices based on points[idx, axis] to find median
+    # Standard median-finding build
     vals = np.empty(N, dtype=coordinate_type)
     for i in range(N):
         vals[i] = points[indices[i], axis]
@@ -51,45 +50,32 @@ def _build_tree_recursive_njit(
     sorted_indices = indices[sorted_arg_indices]
 
     node_idx = sorted_indices[mid]
-    tree_data[node_idx, 2] = axis  # axis
+    tree_data[node_idx, 2] = axis
 
-    left_indices = sorted_indices[:mid]
-    right_indices = sorted_indices[mid + 1 :]
-
-    # Recurse
     left_child = _build_tree_recursive_njit(
-        points, tree_data, tree_mins, tree_maxs, left_indices, depth + 1, dim, count_type, coordinate_type
+        points, tree_data, tree_bounds, sorted_indices[:mid], depth + 1, dim, count_type, coordinate_type
     )
     right_child = _build_tree_recursive_njit(
-        points, tree_data, tree_mins, tree_maxs, right_indices, depth + 1, dim, count_type, coordinate_type
+        points, tree_data, tree_bounds, sorted_indices[mid + 1 :], depth + 1, dim, count_type, coordinate_type
     )
 
     tree_data[node_idx, 0] = left_child
     tree_data[node_idx, 1] = right_child
 
-    # --- Compute AABB (Union of current point, left child, right child) ---
-    # Initialize with the node's own point
+    # Update AABB: Start with node's own point
     p = points[node_idx]
     for d in range(dim):
-        val = p[d]
-        tree_mins[node_idx, d] = val
-        tree_maxs[node_idx, d] = val
+        tree_bounds[node_idx, d, 0] = p[d]  # min
+        tree_bounds[node_idx, d, 1] = p[d]  # max
 
-    # Merge Left
-    if left_child != -1:
-        for d in range(dim):
-            if tree_mins[left_child, d] < tree_mins[node_idx, d]:
-                tree_mins[node_idx, d] = tree_mins[left_child, d]
-            if tree_maxs[left_child, d] > tree_maxs[node_idx, d]:
-                tree_maxs[node_idx, d] = tree_maxs[left_child, d]
-
-    # Merge Right
-    if right_child != -1:
-        for d in range(dim):
-            if tree_mins[right_child, d] < tree_mins[node_idx, d]:
-                tree_mins[node_idx, d] = tree_mins[right_child, d]
-            if tree_maxs[right_child, d] > tree_maxs[node_idx, d]:
-                tree_maxs[node_idx, d] = tree_maxs[right_child, d]
+    # Merge children bounds
+    for child in (left_child, right_child):
+        if child != -1:
+            for d in range(dim):
+                if tree_bounds[child, d, 0] < tree_bounds[node_idx, d, 0]:
+                    tree_bounds[node_idx, d, 0] = tree_bounds[child, d, 0]
+                if tree_bounds[child, d, 1] > tree_bounds[node_idx, d, 1]:
+                    tree_bounds[node_idx, d, 1] = tree_bounds[child, d, 1]
 
     return node_idx
 
@@ -123,9 +109,8 @@ def get_kd_tree_with_labeled_points_aabb_pruning_jitclass(count_type, coordinate
     kd_tree_with_labeled_points_spec = [
         # --- Tree Storage (Array of Structures approach) ---
         ('points', coordinate_type_numba[:, :]),
-        # AABB Storage per node: (max_size, dim)
-        ('tree_mins', coordinate_type_numba[:, :]),
-        ('tree_maxs', coordinate_type_numba[:, :]),
+        # AABB Storage per node: (max_size, dim, 2)
+        ('tree_bounds', coordinate_type_numba[:, :, :]),
         # (max_size,) - External labels
         ('tree_labels', label_type_numba[:]),
         # (max_size, 4) - Combined tree data: [left, right, axis, valid]
@@ -163,8 +148,7 @@ def get_kd_tree_with_labeled_points_aabb_pruning_jitclass(count_type, coordinate
 
             # Initialize Tree Arrays
             self.points = np.zeros((max_size, dimension_count), dtype=coordinate_type)
-            self.tree_mins = np.zeros((max_size, dimension_count), dtype=coordinate_type)
-            self.tree_maxs = np.zeros((max_size, dimension_count), dtype=coordinate_type)
+            self.tree_bounds = np.zeros((max_size, dimension_count, 2), dtype=coordinate_type)
 
             self.tree_labels = np.zeros(max_size, dtype=label_type)
 
@@ -233,8 +217,7 @@ def get_kd_tree_with_labeled_points_aabb_pruning_jitclass(count_type, coordinate
             self.root = _build_tree_recursive_njit(
                 self.points,
                 self.tree_data,
-                self.tree_mins,
-                self.tree_maxs,
+                self.tree_bounds,
                 indices,
                 0,
                 self.dim,
@@ -267,8 +250,7 @@ def get_kd_tree_with_labeled_points_aabb_pruning_jitclass(count_type, coordinate
 
             # Initialize bounds for new leaf
             for d in range(self.dim):
-                self.tree_mins[idx, d] = point[d]
-                self.tree_maxs[idx, d] = point[d]
+                self.tree_bounds[idx, d, :] = point[d]
 
             self._map_put(label, idx)
             self.num_active += 1
@@ -282,10 +264,10 @@ def get_kd_tree_with_labeled_points_aabb_pruning_jitclass(count_type, coordinate
             while True:
                 # Update bounds of the current ancestor to include the new point
                 for d in range(self.dim):
-                    if point[d] < self.tree_mins[curr, d]:
-                        self.tree_mins[curr, d] = point[d]
-                    if point[d] > self.tree_maxs[curr, d]:
-                        self.tree_maxs[curr, d] = point[d]
+                    if point[d] < self.tree_bounds[curr, d, 0]:
+                        self.tree_bounds[curr, d, 0] = point[d]
+                    if point[d] > self.tree_bounds[curr, d, 1]:
+                        self.tree_bounds[curr, d, 1] = point[d]
 
                 axis = self.tree_data[curr, IDX_AXIS]
                 if point[axis] < self.points[curr, axis]:
@@ -359,9 +341,7 @@ def get_kd_tree_with_labeled_points_aabb_pruning_jitclass(count_type, coordinate
                 # Process Far Child (Push first so it's processed last)
                 if far_child != -1:
                     # AABB Pruning
-                    dist_to_box = _aabb_dist_sq(
-                        reference_point, self.tree_mins[far_child], self.tree_maxs[far_child], self.dim
-                    )
+                    dist_to_box = _aabb_dist_sq(reference_point, self.tree_bounds[far_child], self.dim)
                     # Use <= to ensure we handle ties.
                     # If dist_to_box == min_dist_sq, a point inside might be the tie-breaker with a smaller label.
                     if dist_to_box <= min_dist_sq:
@@ -372,9 +352,7 @@ def get_kd_tree_with_labeled_points_aabb_pruning_jitclass(count_type, coordinate
                 if near_child != -1:
                     # Optional: AABB check on near child can strictly prune cases where the node is close
                     # but the points inside the near bounding box are actually far away.
-                    dist_to_box = _aabb_dist_sq(
-                        reference_point, self.tree_mins[near_child], self.tree_maxs[near_child], self.dim
-                    )
+                    dist_to_box = _aabb_dist_sq(reference_point, self.tree_bounds[near_child], self.dim)
                     if dist_to_box <= min_dist_sq:
                         stack[stack_top] = near_child
                         stack_top += 1
