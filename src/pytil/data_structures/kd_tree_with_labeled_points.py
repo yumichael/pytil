@@ -137,6 +137,7 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
             self._query_stack = np.empty(self._max_query_depth, dtype=count_type)
 
         def set_absolute_tolerance(self, atol: float):
+            assert atol == 0.0, 'Only 0.0 tolerance supported right now.'
             self.atol = atol
 
         def _map_get(self, label: label_type) -> int:
@@ -247,6 +248,60 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
 
         def nearest(self, reference_point: Sequence[coordinate_type]) -> tuple[NDArray[coordinate_type], label_type]:
             '''Return the nearest point and its label as measured from the reference point.
+            In case of ties, return the point with the smallest label.'''
+            if self.root == -1 or self.num_active == 0:
+                raise ValueError("Tree is empty.")
+
+            stack = self._query_stack
+            stack[0] = self.root
+            stack_top = 1
+
+            min_dist_sq = np.inf
+            best_idx = -1
+            best_label = LARGEST_POSSIBLE_LABEL
+
+            while stack_top > 0:
+                stack_top -= 1
+                curr = stack[stack_top]
+
+                dist_sq = 0.0
+                for d in range(self.dim):
+                    diff = self.points[curr, d] - reference_point[d]
+                    dist_sq += diff * diff
+
+                if self.tree_data[curr, IDX_VALID] == 1:
+                    curr_label = self.tree_labels[curr]
+                    if dist_sq < min_dist_sq:
+                        # Clear winner
+                        min_dist_sq = dist_sq
+                        best_idx = curr
+                        best_label = curr_label
+                    elif dist_sq == min_dist_sq:
+                        # Tie-break zone
+                        if curr_label < best_label:
+                            best_idx = curr
+                            best_label = curr_label
+
+                axis = self.tree_data[curr, IDX_AXIS]
+                diff = reference_point[axis] - self.points[curr, axis]
+                near_child = self.tree_data[curr, IDX_LEFT] if diff < 0 else self.tree_data[curr, IDX_RIGHT]
+                far_child = self.tree_data[curr, IDX_RIGHT] if diff < 0 else self.tree_data[curr, IDX_LEFT]
+
+                if far_child != -1 and diff * diff <= min_dist_sq:
+                    stack[stack_top] = far_child
+                    stack_top += 1
+                if near_child != -1:
+                    stack[stack_top] = near_child
+                    stack_top += 1
+
+            return self.points[best_idx], self.tree_labels[best_idx]
+
+        def nearest_with_tolerance(
+            self, reference_point: Sequence[coordinate_type]
+        ) -> tuple[NDArray[coordinate_type], label_type]:
+            '''!!! Legacy function. Not kept up to date.
+
+            Return the nearest point and its label as measured from the reference point.
             In case of ties (within tolerance), return the point with the smallest label.'''
             if self.root == -1 or self.num_active == 0:
                 raise ValueError("Tree is empty.")

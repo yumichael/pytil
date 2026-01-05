@@ -450,7 +450,7 @@ def test_tie_breaking_ordering(count_type, coord_type, label_type, atol):
 
 if __name__ == "__main__":
     count_type, coord_type, label_type = np.int32, np.float32, np.int32
-    atol = 1e-12
+    atol = 0.0
 
     rng = np.random.default_rng(42)
 
@@ -468,8 +468,8 @@ if __name__ == "__main__":
     record = np.zeros(len(w_correctness), dtype=np.int64)
     ok, message = correctness_func(rng, n_ops, w_correctness, 500, record)
     print("Operation counts:", record)
-    assert sum(record) == n_ops
     if ok:
+        assert sum(record) == n_ops
         print(f"✅ Correctness Test PASSED: {message}")
     else:
         print(f"❌ Correctness Test FAILED: {message}")
