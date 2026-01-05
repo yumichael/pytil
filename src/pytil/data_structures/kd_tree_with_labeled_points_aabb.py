@@ -132,7 +132,7 @@ def get_kd_tree_with_labeled_points_aabb_pruning_jitclass(count_type, coordinate
     ]
 
     @jitclass(kd_tree_with_labeled_points_spec)
-    class KdTreeWithLabeledPointsAABBPruning:
+    class KdTreeWithLabeledPointsAabbPruning:
         def __init__(self, max_size: int, dimension_count: int, max_label_size: int):
             '''Initialize the data structure allowing for at most max_size number of points
             and labels bounded by max_label_size. Dimension is set upfront.'''
@@ -590,4 +590,4 @@ def get_kd_tree_with_labeled_points_aabb_pruning_jitclass(count_type, coordinate
 
             return buffer_count
 
-    return KdTreeWithLabeledPointsAABBPruning
+    return KdTreeWithLabeledPointsAabbPruning
