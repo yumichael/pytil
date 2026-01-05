@@ -2,6 +2,7 @@
 # python -m pytil.tests.data_structures.test_nearest_neighbor_index
 
 import math
+import sys
 import time
 from functools import cache
 
@@ -484,7 +485,7 @@ if __name__ == "__main__":
         print(f"❌ Tie-Breaking Test FAILED: {message}")
         exit(1)
 
-    do_benchmark_test = False
+    do_benchmark_test = sys.argv[-1] == '--benchmark'
     if do_benchmark_test:
         print(f"\nRunning Benchmark Test...")
         w_benchmark = np.array([0.25, 0.25, 0.25, 0.0, 0.25, 0.0], dtype=np.float64)
