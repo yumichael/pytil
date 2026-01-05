@@ -450,7 +450,7 @@ def test_tie_breaking_ordering(count_type, coord_type, label_type, atol):
 
 
 if __name__ == "__main__":
-    count_type, coord_type, label_type = np.int32, np.float32, np.int32
+    count_type, coord_type, label_type = np.int64, np.float64, np.int64
     atol = 0.0
 
     rng = np.random.default_rng(42)
