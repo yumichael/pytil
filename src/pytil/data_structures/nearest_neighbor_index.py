@@ -1,5 +1,8 @@
-from pytil.data_structures.kd_tree_with_labeled_points import (
-    get_kd_tree_with_labeled_points_jitclass,
+from pytil.data_structures.kd_tree_with_labeled_points_aabb import (
+    get_kd_tree_with_labeled_points_aabb_pruning_jitclass,
+)
+from pytil.data_structures.kd_tree_with_labeled_points_hyperplane import (
+    get_kd_tree_with_labeled_points_hyperplane_pruning_jitclass,
 )
 
-get_nearest_neighbor_index_jitclass = get_kd_tree_with_labeled_points_jitclass
+get_nearest_neighbor_index_jitclass = get_kd_tree_with_labeled_points_aabb_pruning_jitclass

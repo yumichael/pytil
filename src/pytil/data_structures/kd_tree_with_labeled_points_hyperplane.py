@@ -53,7 +53,7 @@ def _build_tree_recursive_njit(points, tree_data, indices, depth, dim, count_typ
 
 
 @cache
-def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_type):
+def get_kd_tree_with_labeled_points_hyperplane_pruning_jitclass(count_type, coordinate_type, label_type):
     """
     Factory to create a specialized JIT-compiled KD-Tree class.
 
@@ -107,7 +107,7 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
     ]
 
     @jitclass(kd_tree_with_labeled_points_spec)
-    class KdTreeWithLabeledPoints:
+    class KdTreeWithLabeledPointsHyperplanePruning:
         def __init__(self, max_size: int, dimension_count: int, max_label_size: int):
             '''Initialize the data structure allowing for at most max_size number of points
             and labels bounded by max_label_size. Dimension is set upfront.'''
@@ -514,4 +514,4 @@ def get_kd_tree_with_labeled_points_jitclass(count_type, coordinate_type, label_
 
             return buffer_count
 
-    return KdTreeWithLabeledPoints
+    return KdTreeWithLabeledPointsHyperplanePruning
