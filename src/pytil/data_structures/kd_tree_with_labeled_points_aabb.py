@@ -8,6 +8,12 @@ from numba import njit
 from numba.experimental import jitclass
 from numpy.typing import NDArray
 
+# --- Constants for internal tree_data array ---
+IDX_LEFT = 0
+IDX_RIGHT = 1
+IDX_AXIS = 2
+IDX_VALID = 3
+
 
 @njit(inline='always')
 def _aabb_dist_sq(point, bounds, dim):
@@ -59,8 +65,8 @@ def _build_tree_recursive_njit(points, tree_data, tree_bounds, indices, depth, d
         points, tree_data, tree_bounds, sorted_indices[mid + 1 :], depth + 1, dim, count_type, coordinate_type
     )
 
-    tree_data[node_idx, 0] = left_child
-    tree_data[node_idx, 1] = right_child
+    tree_data[node_idx, IDX_LEFT] = left_child
+    tree_data[node_idx, IDX_RIGHT] = right_child
 
     # Update AABB: Start with node's own point
     p = points[node_idx]
@@ -99,12 +105,6 @@ def get_kd_tree_with_labeled_points_aabb_pruning_jitclass(count_type, coordinate
         assert False, 'Unsupported label type'
 
     DEFAULT_ABSOLUTE_TOLERANCE = 0.0
-
-    # Tree data indices (for AoS structure)
-    IDX_LEFT = 0
-    IDX_RIGHT = 1
-    IDX_AXIS = 2
-    IDX_VALID = 3
 
     kd_tree_with_labeled_points_spec = [
         # --- Tree Storage (Array of Structures approach) ---
