@@ -15,6 +15,7 @@ from numpy.typing import NDArray
 from pytil.data_structures.nearest_neighbor_index import (
     get_nearest_neighbor_index_jitclass,
 )
+from pytil.numba_utility import set_seed
 
 # ==============================================================================
 # 1. Random Sampling Data Structure for Labels
@@ -453,7 +454,8 @@ if __name__ == "__main__":
     count_type, coord_type, label_type = np.int64, np.float64, np.int64
     atol = 0.0
 
-    rng = np.random.default_rng(42)
+    set_seed(0)
+    rng = np.random.default_rng(0)
 
     correctness_func, benchmark_func = get_nn_index_tests(count_type, coord_type, label_type, atol)
 
