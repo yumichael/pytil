@@ -16,6 +16,54 @@ IDX_VALID = 3
 
 
 @njit(inline='always')
+def _less_than(v1, l1, v2, l2):
+    """Lexicographical comparison for stable partitioning in clusters."""
+    if v1 < v2:
+        return True
+    if v1 == v2:
+        return l1 < l2
+    return False
+
+
+@njit
+def _partition(indices, vals, labels, left, right, pivot_idx):
+    pivot_val = vals[pivot_idx]
+    pivot_label = labels[indices[pivot_idx]]
+
+    # Move pivot to end
+    indices[pivot_idx], indices[right] = indices[right], indices[pivot_idx]
+    vals[pivot_idx], vals[right] = vals[right], vals[pivot_idx]
+
+    store_idx = left
+    for i in range(left, right):
+        if _less_than(vals[i], labels[indices[i]], pivot_val, pivot_label):
+            indices[i], indices[store_idx] = indices[store_idx], indices[i]
+            vals[i], vals[store_idx] = vals[store_idx], vals[i]
+            store_idx += 1
+
+    indices[store_idx], indices[right] = indices[right], indices[store_idx]
+    vals[store_idx], vals[right] = vals[right], vals[store_idx]
+    return store_idx
+
+
+@njit
+def _quickselect_indices(indices, vals, labels, k):
+    left, right = 0, len(indices) - 1
+    while True:
+        if left == right:
+            return
+        # TODO Use a Generator for rng when a future numba version supports it better with jitclass use
+        pivot_idx = np.random.randint(left, right + 1)
+        pivot_idx = _partition(indices, vals, labels, left, right, pivot_idx)
+        if k == pivot_idx:
+            return
+        elif k < pivot_idx:
+            right = pivot_idx - 1
+        else:
+            left = pivot_idx + 1
+
+
+@njit(inline='always')
 def _aabb_dist_sq(point, bounds, dim):
     """
     Calculates the squared Euclidean distance from a point to an AABB.
@@ -36,7 +84,9 @@ def _aabb_dist_sq(point, bounds, dim):
 
 
 @njit
-def _build_tree_recursive_njit(points, tree_data, tree_bounds, indices, depth, dim, count_type, coordinate_type):
+def _build_tree_recursive_njit(
+    points, tree_data, tree_bounds, tree_labels, indices, depth, dim, count_type, coordinate_type, workspace
+):
     """
     Recursive helper to build the tree and compute AABBs for every node.
     """
@@ -47,33 +97,49 @@ def _build_tree_recursive_njit(points, tree_data, tree_bounds, indices, depth, d
     axis = depth % dim
     mid = N // 2
 
-    # Standard median-finding build
-    vals = np.empty(N, dtype=coordinate_type)
+    # Copy current axis to contiguous workspace for cache-friendly partitioning
+    vals = workspace[:N]
     for i in range(N):
         vals[i] = points[indices[i], axis]
 
-    sorted_arg_indices = np.argsort(vals)
-    sorted_indices = indices[sorted_arg_indices]
+    _quickselect_indices(indices, vals, tree_labels, mid)
 
-    node_idx = sorted_indices[mid]
-    tree_data[node_idx, 2] = axis
+    node_idx = indices[mid]
+    tree_data[node_idx, IDX_AXIS] = axis
 
+    # Recurse using views
     left_child = _build_tree_recursive_njit(
-        points, tree_data, tree_bounds, sorted_indices[:mid], depth + 1, dim, count_type, coordinate_type
+        points,
+        tree_data,
+        tree_bounds,
+        tree_labels,
+        indices[:mid],
+        depth + 1,
+        dim,
+        count_type,
+        coordinate_type,
+        workspace[:mid],
     )
     right_child = _build_tree_recursive_njit(
-        points, tree_data, tree_bounds, sorted_indices[mid + 1 :], depth + 1, dim, count_type, coordinate_type
+        points,
+        tree_data,
+        tree_bounds,
+        tree_labels,
+        indices[mid + 1 :],
+        depth + 1,
+        dim,
+        count_type,
+        coordinate_type,
+        workspace[mid + 1 :],
     )
 
     tree_data[node_idx, IDX_LEFT] = left_child
     tree_data[node_idx, IDX_RIGHT] = right_child
 
     # Update AABB: Start with node's own point
-    p = points[node_idx]
     for d in range(dim):
-        tree_bounds[node_idx, d, 0] = p[d]  # min
-        tree_bounds[node_idx, d, 1] = p[d]  # max
-
+        tree_bounds[node_idx, d, 0] = points[node_idx, d]  # min
+        tree_bounds[node_idx, d, 1] = points[node_idx, d]  # max
     # Merge children bounds
     for child in (left_child, right_child):
         if child != -1:
@@ -127,6 +193,9 @@ def get_kd_tree_with_labeled_points_aabb_pruning_jitclass(count_type, coordinate
         # --- Pre-allocated Query Stack (adaptive size) ---
         ('_query_stack', count_type_numba[:]),
         ('_max_query_depth', count_type_numba),
+        # --- Preallocated buffers for _rebuild ---
+        ('indices_buffer', count_type_numba[:]),
+        ('workspace_buffer', coordinate_type_numba[:]),
         # --- Floating point tolerance (Legacy field, unused in AABB nearest) ---
         ('atol', coordinate_type_numba),
     ]
@@ -136,6 +205,7 @@ def get_kd_tree_with_labeled_points_aabb_pruning_jitclass(count_type, coordinate
         def __init__(self, max_size: int, dimension_count: int, max_label_size: int):
             '''Initialize the data structure allowing for at most max_size number of points
             and labels bounded by max_label_size. Dimension is set upfront.'''
+
             self.capacity = max_size
             self.num_active = 0
             self.next_free_idx = 0
@@ -162,6 +232,10 @@ def get_kd_tree_with_labeled_points_aabb_pruning_jitclass(count_type, coordinate
 
             # Pre-allocated stack for nearest neighbor queries
             self._query_stack = np.empty(self._max_query_depth, dtype=count_type)
+
+            # Pre-allocate buffers for _rebuild
+            self.indices_buffer = np.zeros(max_size, dtype=count_type)
+            self.workspace_buffer = np.zeros(max_size, dtype=coordinate_type)
 
         def set_absolute_tolerance(self, atol: float):
             # Legacy support
@@ -195,6 +269,7 @@ def get_kd_tree_with_labeled_points_aabb_pruning_jitclass(count_type, coordinate
                 self.label_to_index_map[:] = -1
                 return
 
+            # 1. Compaction (in-place)
             write_ptr = 0
             for read_ptr in range(self.next_free_idx):
                 if self.tree_data[read_ptr, IDX_VALID] == 1:
@@ -205,7 +280,10 @@ def get_kd_tree_with_labeled_points_aabb_pruning_jitclass(count_type, coordinate
 
             self.next_free_idx = write_ptr
             self.label_to_index_map[:] = -1
+
+            # 2. Prepare the pre-allocated indices buffer
             for i in range(self.next_free_idx):
+                self.indices_buffer[i] = i
                 lbl = self.tree_labels[i]
                 self._map_put(lbl, i)
                 self.tree_data[i, IDX_VALID] = 1
@@ -213,16 +291,18 @@ def get_kd_tree_with_labeled_points_aabb_pruning_jitclass(count_type, coordinate
                 self.tree_data[i, IDX_RIGHT] = -1
                 # Bounds will be recomputed by build_tree
 
-            indices = np.arange(self.next_free_idx, dtype=count_type)
+            # 3. Use pre-allocated buffers for the recursive build
             self.root = _build_tree_recursive_njit(
                 self.points,
                 self.tree_data,
                 self.tree_bounds,
-                indices,
+                self.tree_labels,
+                self.indices_buffer[: self.next_free_idx],
                 0,
                 self.dim,
                 count_type,
                 coordinate_type,
+                self.workspace_buffer[: self.next_free_idx],
             )
 
         def __setitem__(self, label: label_type, point: Sequence[coordinate_type]):
