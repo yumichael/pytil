@@ -85,3 +85,16 @@ def get_primes_up_to(prime_at_most):
 cardinal_directions = np.asarray(((1, 0), (0, 1), (-1, 0), (0, -1)))
 ordinal_directions = np.asarray(((1, 1), (1, -1), (-1, 1), (-1, -1)))
 all_directions = np.concatenate((cardinal_directions, ordinal_directions))
+
+
+@njit
+def invert_permutation(permutation):
+    inverse = np.empty_like(permutation)
+    for i in range(len(permutation)):
+        inverse[permutation[i]] = i
+    return inverse
+
+
+def get_human_readable_time_delta(seconds):
+    minutes, seconds = divmod(seconds, 60)
+    return f'{int(minutes)}m{seconds:.1f}s'
