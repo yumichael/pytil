@@ -40,6 +40,7 @@ from pytil.data_structures.array_treap import get_array_treap_1d_items_jitclass
 from pytil.image_utility import upscale_image
 from pytil.new_utility import (
     cardinal_directions,
+    get_human_readable_time_delta,
     highest_power_of_2_dividing,
     is_power_of_two,
     ordinal_directions,
