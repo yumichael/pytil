@@ -375,8 +375,7 @@ def get_kd_tree_with_labeled_points_aabb_pruning_jitclass(count_type, coordinate
 
         def nearest(self, reference_point: Sequence[coordinate_type]) -> tuple[NDArray[coordinate_type], label_type]:
             '''Return the nearest point and its label as measured from the reference point using AABB pruning.
-            In case of ties (dist_sq == min_dist_sq), returns the point with the smallest label.
-            Tolerance (self.atol) is IGNORED.'''
+            In case of ties (dist_sq == min_dist_sq), returns the point with the smallest label.'''
             if self.root == -1 or self.num_active == 0:
                 raise ValueError("Tree is empty.")
 
